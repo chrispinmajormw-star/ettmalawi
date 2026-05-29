@@ -1,0 +1,3589 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ETT Malawi - Management App</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/geist@1.0.0/dist/fonts/geist-sans/stylesheet.min.css" rel="stylesheet">
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body,
+    #root {
+      margin: 0;
+      min-height: 100%;
+      height: 100%;
+    }
+
+    body {
+      font-family: 'Inter', 'Geist', sans-serif;
+      background: #fffaf5;
+      color: #111827;
+    }
+
+    .app-loading {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #fff7ef;
+      color: #111111;
+      font: 700 14px Helvetica, Arial, sans-serif;
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font-family: inherit;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="root">
+    <div class="app-loading">Loading ETT Malawi...</div>
+  </div>
+
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script type="text/babel" data-presets="react">
+    const { useState, useCallback, createContext, useContext, useEffect } = React;
+    // ─────────────────────────────────────────────
+    // CONSTANTS & DATA
+    // ─────────────────────────────────────────────
+    const OR = "#ea6c0a", OR_D = "#c25808", OR_PALE = "#fff4ec", OR_WASH = "#fff9f5", BLACK = "#111111", INK = "#1f2937", SIDEBAR_A = "#3B2621", SIDEBAR_B = "#3B2F2F";
+    const APP_NAME = "ETT Malawi";
+
+    const AfricaLogo = ({ size = 34, variant = "orange" }) => (
+      <span style={{ width: size, height: size, borderRadius: Math.max(8, Math.round(size * .25)), background: variant === "black" ? BLACK : OR, display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: variant === "flat" ? "none" : "0 8px 22px rgba(17,17,17,.14)", overflow: "hidden", flexShrink: 0 }}>
+        <img src="africalogo.svg" alt="Africa map logo" style={{ width: "68%", height: "68%", objectFit: "contain", display: "block" }} />
+      </span>
+    );
+
+    const GlobalStyles = () => (<style>{`
+  body{ font-family: "Inter", "Segoe UI", sans-serif; font-size: 14px; }
+  .leaflet-container { font-family: "Inter", sans-serif; }
+  h1 { font-size: 22px !important; }
+  h2 { font-size: 18px !important; }
+  h3 { font-size: 15px !important; }
+  h4 { font-size: 14px !important; }
+  p, li, td, th, label, select, input, textarea, span, div {
+    font-size: inherit;
+  }
+  @media (max-width: 820px) {
+    [data-app-shell] { height: auto !important; min-height: 100vh !important; display: block !important; overflow: visible !important; }
+    #ett-map { height: 60vh !important; }
+    [data-map-grid] { grid-template-columns: 1fr !important; }
+    [data-content] { padding: 12px !important; overflow: visible !important; }
+    [data-page-grid], [data-map-grid], div[style*="display: grid"] { grid-template-columns: 1fr !important; }
+    table { min-width: 620px; }
+    h1 { font-size: 18px !important; }
+  }
+`}</style>);
+
+    const ROLE_CFG = {
+      admin: { label: "National Admin", color: "#991b1b", bg: "#fee2e2", icon: "🛡️" },
+      tot: { label: "Trainer of Trainers", color: "#c25808", bg: "#fff4ec", icon: "🎓" },
+      data_entry: { label: "Data Entry Officer", color: "#c25808", bg: "#fff4ec", icon: "📝" },
+      district_coordinator: { label: "District Coordinator", color: "#065f46", bg: "#d1fae5", icon: "🏛️" },
+      viewer: { label: "Viewer", color: "#1e40af", bg: "#dbeafe", icon: "👁️" },
+    };
+
+    const CAN = {
+      submitReport: ["admin", "tot", "data_entry", "district_coordinator"],
+      approveReport: ["admin", "district_coordinator"],
+      manageUsers: ["admin"],
+      exportData: ["admin", "district_coordinator"],
+    };
+    const can = (role, act) => (CAN[act] || []).includes(role);
+
+    const USERS_INIT = [
+      { id: "1", email: "admin@ujamaa.mw", password: "admin123", role: "admin", name: "Grace Kamwendo", district: null, avatar: "GK", status: "active" },
+      { id: "2", email: "tot@ujamaa.mw", password: "tot123", role: "tot", name: "TOT", district: "Lilongwe", avatar: "TD", status: "active", clusterId: 0 },
+      { id: "3", email: "entry@ujamaa.mw", password: "entry123", role: "data_entry", name: "John Banda", district: "Lilongwe", avatar: "JB", status: "active" },
+      { id: "4", email: "coord@ujamaa.mw", password: "coord123", role: "district_coordinator", name: "Mary Chirwa", district: "Blantyre", avatar: "MC", status: "active" },
+      { id: "5", email: "viewer@ujamaa.mw", password: "view123", role: "viewer", name: "Tawina Nyirenda", district: null, avatar: "TN", status: "active" },
+    ];
+
+    const REPORTS_INIT = [
+      { id: 1, school: "Kawale Primary", district: "Lilongwe", zone: "Kawale Zone", boys: 34, girls: 38, curriculum: "HIM", session: "Topic 1: Getting to Know You", status: "approved", submitted_by: "John Banda", submitted_at: "2026-05-01", challenges: "Low attendance on day 1", success: "Boys loved the Adjective Game" },
+      { id: 2, school: "Mbayani Primary", district: "Blantyre", zone: "Mbayani Zone", boys: 28, girls: 32, curriculum: "GESD", session: "Session 2: Intro to GESD", status: "pending", submitted_by: "Mary Chirwa", submitted_at: "2026-05-03", challenges: "None", success: "Girls loved the Private Parts song" },
+      { id: 3, school: "Zomba LEA School", district: "Zomba", zone: "Zomba Zone", boys: 0, girls: 41, curriculum: "GESD", session: "Session 3: Awareness", status: "approved", submitted_by: "John Banda", submitted_at: "2026-05-04", challenges: "Venue too small", success: "Great Gazelle Story participation" },
+      { id: 4, school: "Mzimba Primary", district: "Mzimba", zone: "Mzimba Zone", boys: 45, girls: 0, curriculum: "HIM", session: "Topic 2: My Value System", status: "rejected", submitted_by: "Mary Chirwa", submitted_at: "2026-05-05", challenges: "Some boys absent", success: "Values discussion very lively" },
+      { id: 5, school: "Karonga Primary", district: "Karonga", zone: "Karonga Zone", boys: 29, girls: 31, curriculum: "Combined", session: "Topic 6 / Session 6 Combined", status: "pending", submitted_by: "John Banda", submitted_at: "2026-05-06", challenges: "Rain disrupted session", success: "Boys and girls worked well together" },
+      { id: 6, school: "Dedza Primary", district: "Dedza", zone: "Dedza Zone", boys: 38, girls: 35, curriculum: "HIM", session: "Topic 3: Intro to H.I.M", status: "approved", submitted_by: "John Banda", submitted_at: "2026-05-07", challenges: "None", success: "Strong verbal techniques uptake" },
+      { id: 7, school: "Dowa LEA School", district: "Dowa", zone: "Dowa Zone", boys: 0, girls: 44, curriculum: "GESD", session: "Session 4: Verbal Techniques", status: "pending", submitted_by: "Mary Chirwa", submitted_at: "2026-05-08", challenges: "Short on time", success: "Girls very confident saying NO!" },
+    ];
+
+    const CLUSTERS = [
+      { id: 0, name: "Lilongwe Central Cluster", district: "Lilongwe", lead: "TOT Demo", schools: 4, students: 1240, progress: 78, trained: 3 },
+      { id: 1, name: "Lilongwe North Cluster", district: "Lilongwe", lead: "Agnes Phiri", schools: 3, students: 980, progress: 65, trained: 2 },
+      { id: 2, name: "Blantyre South Cluster", district: "Blantyre", lead: "John Mwale", schools: 3, students: 890, progress: 85, trained: 3 },
+      { id: 3, name: "Blantyre Girls Cluster", district: "Blantyre", lead: "Mary Chirwa", schools: 3, students: 760, progress: 72, trained: 2 },
+      { id: 4, name: "Zomba Urban Cluster", district: "Zomba", lead: "Alinafe Banda", schools: 4, students: 1380, progress: 72, trained: 3 },
+      { id: 5, name: "Mzimba Heritage Cluster", district: "Mzimba", lead: "Tawina Nyirenda", schools: 4, students: 1050, progress: 62, trained: 3 },
+      { id: 6, name: "Karonga Lakeshore Cluster", district: "Karonga", lead: "Chisomo Phiri", schools: 3, students: 720, progress: 90, trained: 2 },
+      { id: 7, name: "Dedza Highland Cluster", district: "Dedza", lead: "Patrick Kachingwe", schools: 3, students: 560, progress: 45, trained: 2 },
+      { id: 8, name: "Dowa Central Cluster", district: "Dowa", lead: "Loveness Chirambo", schools: 4, students: 1100, progress: 68, trained: 3 },
+      { id: 9, name: "Mangochi Stars Cluster", district: "Mangochi", lead: "Fatima Yusuf", schools: 3, students: 680, progress: 55, trained: 2 },
+    ];
+
+    const DISTRICTS = [
+      { name: "Lilongwe", r: "Central", s: "Active", tots: 105, schools: 120, cov: 35 }, { name: "Blantyre", r: "Southern", s: "Active", tots: 84, schools: 105, cov: 28 },
+      { name: "Zomba", r: "Southern", s: "Active", tots: 54, schools: 72, cov: 18 }, { name: "Mzimba", r: "Northern", s: "Active", tots: 72, schools: 95, cov: 24 },
+      { name: "Karonga", r: "Northern", s: "Active", tots: 54, schools: 62, cov: 18 }, { name: "Mangochi", r: "Southern", s: "Active", tots: 66, schools: 90, cov: 22 },
+      { name: "Kasungu", r: "Central", s: "Active", tots: 60, schools: 85, cov: 20 }, { name: "Dedza", r: "Central", s: "Active", tots: 42, schools: 68, cov: 14 },
+      { name: "Dowa", r: "Central", s: "Active", tots: 45, schools: 72, cov: 15 }, { name: "Thyolo", r: "Southern", s: "Active", tots: 48, schools: 68, cov: 16 },
+      { name: "Mulanje", r: "Southern", s: "Active", tots: 42, schools: 65, cov: 14 }, { name: "Rumphi", r: "Northern", s: "Active", tots: 45, schools: 48, cov: 15 },
+      { name: "Chitipa", r: "Northern", s: "Active", tots: 36, schools: 45, cov: 12 }, { name: "Ntcheu", r: "Central", s: "Active", tots: 36, schools: 56, cov: 12 },
+      { name: "Machinga", r: "Southern", s: "Active", tots: 36, schools: 65, cov: 12 }, { name: "Nkhotakota", r: "Central", s: "Active", tots: 24, schools: 58, cov: 8 },
+      { name: "Nkhata Bay", r: "Northern", s: "Active", tots: 30, schools: 52, cov: 10 }, { name: "Balaka", r: "Southern", s: "Active", tots: 36, schools: 48, cov: 12 },
+      { name: "Chiradzulu", r: "Southern", s: "Completed", tots: 30, schools: 38, cov: 10 }, { name: "Mwanza", r: "Southern", s: "Completed", tots: 18, schools: 22, cov: 6 },
+      { name: "Likoma", r: "Northern", s: "Completed", tots: 12, schools: 8, cov: 4 }, { name: "Mchinji", r: "Central", s: "Planned", tots: 0, schools: 55, cov: 0 },
+      { name: "Salima", r: "Central", s: "Planned", tots: 0, schools: 50, cov: 0 }, { name: "Ntchisi", r: "Central", s: "Planned", tots: 0, schools: 42, cov: 0 },
+      { name: "Phalombe", r: "Southern", s: "Planned", tots: 0, schools: 40, cov: 0 }, { name: "Chikwawa", r: "Southern", s: "Active", tots: 30, schools: 55, cov: 10 },
+      { name: "Nsanje", r: "Southern", s: "Planned", tots: 0, schools: 35, cov: 0 }, { name: "Neno", r: "Southern", s: "Planned", tots: 0, schools: 25, cov: 0 },
+    ];
+
+    const DISTRICT_INFO = {
+      "Chitipa": { lat: -9.70, lng: 33.27 }, "Karonga": { lat: -9.93, lng: 33.93 }, "Rumphi": { lat: -11.01, lng: 33.86 },
+      "Nkhata Bay": { lat: -11.62, lng: 34.30 }, "Likoma": { lat: -12.06, lng: 34.73 }, "Mzimba": { lat: -11.90, lng: 33.60 },
+      "Nkhotakota": { lat: -12.92, lng: 34.30 }, "Ntchisi": { lat: -13.37, lng: 33.87 }, "Dowa": { lat: -13.66, lng: 33.94 },
+      "Kasungu": { lat: -13.01, lng: 33.47 }, "Mchinji": { lat: -13.80, lng: 32.88 }, "Lilongwe": { lat: -13.97, lng: 33.79 },
+      "Dedza": { lat: -14.37, lng: 34.33 }, "Ntcheu": { lat: -14.83, lng: 34.64 }, "Salima": { lat: -13.78, lng: 34.44 },
+      "Mangochi": { lat: -14.48, lng: 35.27 }, "Machinga": { lat: -15.18, lng: 35.52 }, "Zomba": { lat: -15.39, lng: 35.32 },
+      "Chiradzulu": { lat: -15.68, lng: 35.15 }, "Blantyre": { lat: -15.79, lng: 35.00 }, "Mwanza": { lat: -15.61, lng: 34.52 },
+      "Thyolo": { lat: -16.07, lng: 35.14 }, "Mulanje": { lat: -15.93, lng: 35.52 }, "Phalombe": { lat: -15.81, lng: 35.65 },
+      "Chikwawa": { lat: -16.03, lng: 34.80 }, "Nsanje": { lat: -16.92, lng: 35.27 }, "Balaka": { lat: -14.98, lng: 34.96 }, "Neno": { lat: -15.40, lng: 34.65 }
+    };
+
+    const HIM_SESSIONS = [
+      { num: "Topic 1", title: "Getting to Know You", dur: "60 min", hbg: "#1a3a5c", desc: "Boys explore identity through the Adjective Game and open discussion. Builds confidence and group trust from within.", pledge: "I am a young man / I live my life / I have feelings / I care / I can cry / I am real / I am the new African Man!", objectives: ["Play the Adjective Game to build confidence", "Explore personal identity and role models", "Share views on gender openly"] },
+      { num: "Topic 2", title: "My Value System", dur: "60 min", hbg: "#1a3a5c", desc: "Personal vs. social values — honesty, respect, caring. How values guide behaviour and shape gender identity.", pledge: null, objectives: ["Define personal and social values", "Connect values to everyday decisions", "Explore how community shapes gender values"] },
+      { num: "Topic 3", title: "Intro to H.I.M & Verbal Techniques", dur: "60 min", hbg: "#1a3a5c", desc: "The Hero in Me framework (Care · Safety · Growth · Confidence). Assertive verbal communication to prevent conflict.", pledge: null, objectives: ["Understand the HIM framework", "Learn assertive non-violent communication", "Practice refusing peer pressure"] },
+      { num: "Topic 4", title: "Hero in Me: Step-Up Strategies", dur: "60 min", hbg: "#1a3a5c", desc: "Active bystandership. The 3 Ds: Direct, Distract, Delegate — safe intervention strategies when witnessing SGBV.", pledge: null, objectives: ["Define bystander effect", "Learn the 3 Ds: Direct, Distract, Delegate", "Build confidence to act as a positive leader"] },
+      { num: "Topic 5", title: "Referrals & Break the Silence", dur: "60 min", hbg: "#1a3a5c", desc: "Break silence on SGBV. Map referral pathways and trusted adults. Overcome stigma of speaking up.", pledge: null, objectives: ["Map trusted adults and referral points", "Understand when and how to report SGBV", "Overcome fear and stigma of speaking up"] },
+      { num: "Topic 6", title: "Boys & Girls Combined Session", dur: "90 min", hbg: "#1a3a5c", desc: "Joint graduation with GESD. Share learning, build mutual respect, sign school safety charter.", pledge: null, objectives: ["Foster mutual respect between boys and girls", "Reinforce HIM and GESD messages", "Plan joint action and sign school safety charter"] },
+    ];
+    const GESD_SESSIONS = [
+      { num: "Session 1", title: "Getting to Know You", dur: "60 min", hbg: "#5c1a3a", desc: "For girls to understand their personality, strengths, weaknesses, thoughts and beliefs. Identity exploration.", pledge: "These are my private parts / No one should touch them / No one should see them / No one should play with them", objectives: ["Build group trust and safe space", "Explore personal identity and strengths", "Understand personality, thoughts and beliefs"] },
+      { num: "Session 2", title: "Intro to GESD", dur: "60 min", hbg: "#5c1a3a", desc: "GESD foundation: self-efficacy, self-empowerment, self-defence. The Attack Progression Scale (Verbal → Intimidation → Physical).", pledge: null, objectives: ["Understand the GESD framework", "Learn the Attack Progression Scale", "Know that our safety is our responsibility"] },
+      { num: "Session 3", title: "Awareness", dur: "60 min", hbg: "#5c1a3a", desc: "Prevent the Perpetrator Progression Pattern (PPP). Visible signs of awareness. Trust your inner voice.", pledge: "INTUITION / I can trust it — It is my Alarm / If I listen — it keeps me from all harm", objectives: ["Understand the PPP: Identification → Selection → Attack", "Recognise the 4 visible signs of awareness", "Trust your inner voice — it is your alarm"] },
+      { num: "Session 4", title: "Verbal Techniques", dur: "60 min", hbg: "#5c1a3a", desc: "Voice prevents 85% of conflicts. The 5 uses of voice and 5 Personal Weapons: Spirit, Mind, Eyes, Voice, Body (SMEVB).", pledge: null, objectives: ["Use voice as primary conflict prevention", "Learn the 5 uses of voice", "Know the 5 Personal Weapons (SMEVB)"] },
+      { num: "Session 5", title: "Physical Techniques", dur: "60 min", hbg: "#5c1a3a", desc: "Five Fingers of Emergency (Think·Yell·Run·Fight·Tell). Breaking the Silence — step out of secrecy to start healing.", pledge: "I am a girl, I believe in my capabilities / I have the right to education / I have the right to be treated with respect / I will not be silenced / I say No", objectives: ["Learn 5 FED tools: Think, Yell, Run, Fight, Tell", "Understand Breaking the Silence", "Know abuse is never your fault"] },
+      { num: "Session 6", title: "Combined Class — Boys & Girls", dur: "90 min", hbg: "#5c1a3a", desc: "Joint graduation with HIM. Celebrate learning, share pledges, sign safety charter.", pledge: null, objectives: ["Share key learnings with boys", "Build mutual respect and shared commitment", "Create a joint action plan"] },
+    ];
+
+    const SESSION_LISTS = {
+      HIM: ["Topic 1: Getting to Know You", "Topic 2: My Value System", "Topic 3: Intro to H.I.M & Verbal Techniques", "Topic 4: Hero in Me: Step-Up Strategies", "Topic 5: Referrals & Break the Silence", "Topic 6: Boys & Girls Combined Session"],
+      GESD: ["Session 1: Getting to Know You", "Session 2: Intro to GESD", "Session 3: Awareness", "Session 4: Verbal Techniques", "Session 5: Physical Techniques", "Session 6: Combined Class — Boys & Girls"],
+      Combined: ["Topic 6 / Session 6: Boys & Girls Combined"],
+    };
+
+    const DISTRICT_LIST = ["Lilongwe", "Blantyre", "Zomba", "Mzimba", "Karonga", "Mangochi", "Kasungu", "Dedza", "Dowa", "Thyolo", "Rumphi", "Chitipa", "Machinga", "Balaka", "Chikwawa", "Nkhotakota", "Nkhata Bay", "Mulanje", "Ntcheu", "Chiradzulu"];
+
+    const TOP15 = [
+      { rank: 1, name: "Lilongwe", r: "Central", tots: 105, cov: "35/120", pct: 29 }, { rank: 2, name: "Blantyre", r: "Southern", tots: 84, cov: "28/105", pct: 27 },
+      { rank: 3, name: "Mzimba", r: "Northern", tots: 72, cov: "24/95", pct: 25 }, { rank: 4, name: "Mangochi", r: "Southern", tots: 66, cov: "22/90", pct: 24 },
+      { rank: 5, name: "Kasungu", r: "Central", tots: 60, cov: "20/85", pct: 24 }, { rank: 6, name: "Karonga", r: "Northern", tots: 54, cov: "18/62", pct: 29 },
+      { rank: 7, name: "Zomba", r: "Southern", tots: 54, cov: "18/72", pct: 25 }, { rank: 8, name: "Thyolo", r: "Southern", tots: 48, cov: "16/68", pct: 24 },
+      { rank: 9, name: "Rumphi", r: "Northern", tots: 45, cov: "15/48", pct: 31 }, { rank: 10, name: "Dowa", r: "Central", tots: 45, cov: "15/72", pct: 21 },
+      { rank: 11, name: "Dedza", r: "Central", tots: 42, cov: "14/68", pct: 21 }, { rank: 12, name: "Mulanje", r: "Southern", tots: 42, cov: "14/65", pct: 22 },
+      { rank: 13, name: "Chitipa", r: "Northern", tots: 36, cov: "12/45", pct: 27 }, { rank: 14, name: "Ntcheu", r: "Central", tots: 36, cov: "12/56", pct: 21 },
+      { rank: 15, name: "Machinga", r: "Southern", tots: 36, cov: "12/65", pct: 18 },
+    ];
+
+    // ─────────────────────────────────────────────
+    // SHARED COMPONENTS
+    // ─────────────────────────────────────────────
+    const Badge = ({ text, color = OR, bg = OR_PALE }) => <span style={{ padding: "2px 9px", borderRadius: 20, fontSize: 10.5, fontWeight: 700, color, background: bg, whiteSpace: "nowrap" }}>{text}</span>;
+    const Pill = ({ s }) => {
+      const m = { Active: { c: OR_D, bg: OR_PALE }, Completed: { c: "#065f46", bg: "#d1fae5" }, Planned: { c: "#6b7280", bg: "#f3f4f6" }, approved: { c: "#065f46", bg: "#d1fae5" }, pending: { c: "#92400e", bg: "#fef9c3" }, rejected: { c: "#991b1b", bg: "#fee2e2" } }[s] || { c: "#6b7280", bg: "#f3f4f6" };
+      return <Badge text={s.charAt(0).toUpperCase() + s.slice(1)} color={m.c} bg={m.bg} />;
+    };
+    const ProgBar = ({ pct, color = OR }) => <div style={{ height: 5, background: "#e5e7eb", borderRadius: 3, overflow: "hidden" }}><div style={{ height: "100%", width: `${Math.min(pct, 100)}%`, background: color, borderRadius: 3 }} /></div>;
+    const Card = ({ children, style: e = {} }) => <div style={{ background: "rgba(255,255,255,.96)", border: "1px solid #f0d7c1", borderRadius: 14, padding: 14, boxShadow: "0 10px 28px rgba(59,38,33,.06)", ...e }}>{children}</div>;
+    const SH = ({ title, action }) => <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}><h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>{title}</h3>{action}</div>;
+    const Kicker = ({ text }) => <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.3, textTransform: "uppercase", color: OR, marginBottom: 3 }}>{text}</div>;
+
+    const Btn = ({ children, onClick, variant = "primary", size = "md", disabled = false, full = false, style: e = {} }) => {
+      const v = { primary: { background: OR, color: "#fff", border: "none" }, secondary: { background: "#fff", color: BLACK, border: `1px solid ${OR}` }, danger: { background: "#dc2626", color: "#fff", border: "none" }, ghost: { background: "#fff7ef", color: BLACK, border: "1px solid #f0d7c1" }, success: { background: "#15803d", color: "#fff", border: "none" }, dark: { background: BLACK, color: "#fff", border: "none" } };
+      const sz = { sm: { padding: "4px 10px", fontSize: 11 }, md: { padding: "7px 15px", fontSize: 12.5 }, lg: { padding: "11px 22px", fontSize: 14 } };
+      return <button onClick={disabled ? undefined : onClick} disabled={disabled} style={{ borderRadius: 9, fontFamily: "inherit", cursor: disabled ? "not-allowed" : "pointer", display: "inline-flex", alignItems: "center", gap: 5, fontWeight: 800, transition: "all .13s", opacity: disabled ? 0.6 : 1, width: full ? "100%" : "auto", justifyContent: full ? "center" : "flex-start", boxShadow: variant === "primary" ? "0 8px 18px rgba(234,108,10,.18)" : "none", ...v[variant], ...sz[size], ...e }}>{children}</button>;
+    };
+
+    const FInput = ({ label, value, onChange, ...p }) => (
+      <div style={{ marginBottom: 11 }}>
+        {label && <label style={{ display: "block", fontSize: 11.5, fontWeight: 700, marginBottom: 3, color: "#374151" }}>{label}</label>}
+        <input value={value} onChange={onChange} style={{ width: "100%", padding: "7px 10px", border: "1px solid #e5e7eb", borderRadius: 6, fontSize: 12.5, fontFamily: "inherit", background: "#fafafa", outline: "none", boxSizing: "border-box" }} {...p} />
+      </div>
+    );
+    const FSelect = ({ label, value, onChange, children }) => (
+      <div style={{ marginBottom: 11 }}>
+        {label && <label style={{ display: "block", fontSize: 11.5, fontWeight: 700, marginBottom: 3, color: "#374151" }}>{label}</label>}
+        <select value={value} onChange={onChange} style={{ width: "100%", padding: "7px 10px", border: "1px solid #e5e7eb", borderRadius: 6, fontSize: 12.5, fontFamily: "inherit", background: "#fafafa", outline: "none" }}>{children}</select>
+      </div>
+    );
+    const FArea = ({ label, value, onChange, ...p }) => (
+      <div style={{ marginBottom: 11 }}>
+        {label && <label style={{ display: "block", fontSize: 11.5, fontWeight: 700, marginBottom: 3, color: "#374151" }}>{label}</label>}
+        <textarea value={value} onChange={onChange} style={{ width: "100%", padding: "7px 10px", border: "1px solid #e5e7eb", borderRadius: 6, fontSize: 12.5, fontFamily: "inherit", background: "#fafafa", outline: "none", resize: "vertical", minHeight: 75, boxSizing: "border-box" }} {...p} />
+      </div>
+    );
+
+    const Modal = ({ title, children, onClose, width = 520 }) => (
+      <div onClick={e => { if (e.target === e.currentTarget) onClose(); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.52)", zIndex: 9000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <div style={{ background: "#fff", borderRadius: 12, width, maxWidth: "95vw", maxHeight: "90vh", overflow: "auto", boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}>
+          <div style={{ padding: "16px 18px 11px", borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>
+            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>{title}</h3>
+            <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "#9ca3af" }}>✕</button>
+          </div>
+          <div style={{ padding: "16px 18px" }}>{children}</div>
+        </div>
+      </div>
+    );
+
+    const Toast = ({ msg, onClose }) => (
+      <div style={{ position: "fixed", bottom: 16, right: 16, background: "#1c1008", color: "#fff", padding: "10px 14px", borderRadius: 8, fontSize: 12.5, fontWeight: 600, zIndex: 99999, boxShadow: "0 4px 18px rgba(0,0,0,.3)", borderLeft: `3px solid ${OR}`, display: "flex", alignItems: "center", gap: 10 }}>
+        {msg}<span onClick={onClose} style={{ cursor: "pointer", opacity: .5, fontSize: 14 }}>✕</span>
+      </div>
+    );
+
+    const StatCard = ({ icon, label, value, color = OR, sub }) => (
+      <Card style={{ textAlign: "center", padding: 13 }}>
+        <div style={{ width: 32, height: 32, borderRadius: 7, background: OR_PALE, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 8px", fontSize: 14 }}>{icon}</div>
+        <div style={{ fontSize: 24, fontWeight: 700, color, lineHeight: 1 }}>{value}</div>
+        <div style={{ fontSize: 10.5, color: "#9ca3af", marginTop: 3 }}>{label}</div>
+        {sub && <div style={{ fontSize: 10, color: "#d1d5db", marginTop: 1 }}>{sub}</div>}
+      </Card>
+    );
+
+    const TH = ({ cols }) => (
+      <thead><tr style={{ background: OR_PALE }}>
+        {cols.map(c => <th key={c} style={{ padding: "6px 9px", textAlign: "left", fontSize: 10, fontWeight: 700, color: OR_D, textTransform: "uppercase", letterSpacing: .4, borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{c}</th>)}
+      </tr></thead>
+    );
+
+    const FilterBar = ({ options, active, onChange, search, onSearch, searchPlaceholder }) => (
+      <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+        {options.map(o => <button key={o.v} onClick={() => onChange(o.v)} style={{ padding: "3px 11px", borderRadius: 20, border: "1px solid", borderColor: active === o.v ? OR : "#e5e7eb", background: active === o.v ? OR : "#fff", color: active === o.v ? "#fff" : "#6b7280", fontSize: 11.5, fontWeight: 600, cursor: "pointer" }}>{o.l}</button>)}
+        {onSearch && <input placeholder={searchPlaceholder || "Search..."} value={search} onChange={e => onSearch(e.target.value)} style={{ marginLeft: "auto", padding: "4px 11px", borderRadius: 20, border: "1px solid #e5e7eb", fontSize: 11.5, outline: "none", width: 175 }} />}
+      </div>
+    );
+
+    // ─────────────────────────────────────────────
+    // NAV CONFIG
+    // ─────────────────────────────────────────────
+    const NAV_GROUPS = {
+      admin: [
+        {
+          group: "Main", items: [
+            { id: "dashboard", l: "Dashboard", i: "⊞" },
+            { id: "submit", l: "Submit Report", i: "📝" },
+            { id: "reports", l: "All Reports", i: "📋" },
+          ]
+        },
+        {
+          group: "Program", items: [
+            { id: "maps", l: "Maps", i: "🗺️" },
+            { id: "clusters", l: "School Clusters", i: "🏫" },
+            { id: "districts", l: "Districts", i: "📍" },
+            { id: "trainings", l: "Trainings", i: "🎓" },
+            { id: "curriculum", l: "Digital Curriculum", i: "📘" },
+            { id: "ett", l: "ETT Training", i: "📖" },
+          ]
+        },
+        {
+          group: "Admin", items: [
+            { id: "analytics", l: "Analytics", i: "📊" },
+            { id: "users", l: "User Management", i: "👥" },
+            { id: "impact", l: "Reports & Impact", i: "📈" },
+            { id: "about", l: "About", i: "ℹ️" },
+          ]
+        },
+      ],
+      data_entry: [
+        {
+          group: "Main", items: [
+            { id: "dashboard", l: "Dashboard", i: "⊞" },
+            { id: "submit", l: "Submit Report", i: "📝" },
+            { id: "my_reports", l: "My Reports", i: "📋" },
+          ]
+        },
+        {
+          group: "Program", items: [
+            { id: "curriculum", l: "Digital Curriculum", i: "📘" },
+            { id: "ett", l: "ETT Training", i: "📖" },
+          ]
+        },
+      ],
+      tot: [
+        {
+          group: "Main", items: [
+            { id: "dashboard", l: "Dashboard", i: "⊞" },
+            { id: "submit", l: "Submit Report", i: "📝" },
+            { id: "my_reports", l: "My Reports", i: "📋" },
+          ]
+        },
+        {
+          group: "My Cluster", items: [
+            { id: "clusters", l: "Assigned Cluster", i: "🏫" },
+            { id: "maps", l: "Cluster Map", i: "🗺️" },
+            { id: "districts", l: "District", i: "📍" },
+            { id: "curriculum", l: "Digital Curriculum", i: "📘" },
+            { id: "ett", l: "ETT Training", i: "📖" },
+          ]
+        },
+      ],
+      district_coordinator: [
+        {
+          group: "Main", items: [
+            { id: "dashboard", l: "Dashboard", i: "⊞" },
+            { id: "submit", l: "Submit Report", i: "📝" },
+            { id: "reports", l: "Reports", i: "📋" },
+          ]
+        },
+        {
+          group: "Program", items: [
+            { id: "maps", l: "Maps", i: "🗺️" },
+            { id: "clusters", l: "School Clusters", i: "🏫" },
+            { id: "districts", l: "Districts", i: "📍" },
+            { id: "curriculum", l: "Digital Curriculum", i: "📘" },
+          ]
+        },
+        {
+          group: "Analytics", items: [
+            { id: "analytics", l: "Analytics", i: "📊" },
+            { id: "impact", l: "Reports & Impact", i: "📈" },
+          ]
+        },
+      ],
+      viewer: [
+        { group: "Main", items: [{ id: "dashboard", l: "Dashboard", i: "⊞" }] },
+        {
+          group: "Program", items: [
+            { id: "reports", l: "Reports", i: "📋" },
+            { id: "maps", l: "Maps", i: "🗺️" },
+            { id: "clusters", l: "School Clusters", i: "🏫" },
+            { id: "districts", l: "Districts", i: "📍" },
+            { id: "curriculum", l: "Digital Curriculum", i: "📘" },
+          ]
+        },
+        { group: "Info", items: [{ id: "analytics", l: "Analytics", i: "📊" }, { id: "about", l: "About", i: "ℹ️" }] },
+      ],
+    };
+
+    const PUBLIC_NAV = [
+      {
+        group: "ETT Malawi",
+        items: [
+          { id: "dashboard", l: "Program Overview", i: "📊" },
+          { id: "maps", l: "Coverage Map", i: "🗺️" },
+          { id: "impact", l: "Impact Stories", i: "🌟" },
+          { id: "trainings", l: "Trainings", i: "🎓" },
+          { id: "curriculum", l: "Digital Curriculum", i: "📘" },
+          { id: "submit", l: "Report a Concern", i: "🛡️" },
+          { id: "about", l: "About ETT", i: "ℹ️" },
+        ]
+      }
+    ];
+
+    const PAGE_LABELS = { dashboard: "Dashboard", submit: "Report a Case", reports: "All Reports", my_reports: "My Reports", maps: "Maps", clusters: "School Clusters", districts: "Districts", trainings: "Trainings", curriculum: "Digital Curriculum", ett: "ETT Training", analytics: "Analytics", users: "User Management", impact: "Reports & Impact", about: "About", login: "Sign In" };
+
+    // ─────────────────────────────────────────────
+    // LOGIN
+    // ─────────────────────────────────────────────
+    function LoginPage({ onLogin, onPublicView, onRegister }) {
+      const [mode, setMode] = useState("choice");
+
+      // LOGIN
+      const [email, setEmail] = useState("");
+      const [pass, setPass] = useState("");
+      const [loading, setLoading] = useState(false);
+      const [err, setErr] = useState("");
+
+      // REGISTER
+      const [reg, setReg] = useState({
+        name: "",
+        district: "",
+        designation: "",
+        email: "",
+        school: "",
+        cluster: "",
+        password: ""
+      });
+
+      const doLogin = async () => {
+        if (!email || !pass) {
+          setErr("Please enter email and password");
+          return;
+        }
+
+        setLoading(true);
+
+        await new Promise(r => setTimeout(r, 500));
+
+        const allUsers = [
+          ...USERS_INIT,
+          ...(JSON.parse(localStorage.getItem("ett_users") || "[]"))
+        ];
+
+        const u = allUsers.find(
+          x => x.email === email && x.password === pass
+        );
+
+        setLoading(false);
+
+        if (!u) {
+          setErr("Invalid email or password");
+          return;
+        }
+
+        onLogin(u);
+      };
+
+      const createAccount = () => {
+        if (
+          !reg.name ||
+          !reg.district ||
+          !reg.designation ||
+          !reg.email ||
+          !reg.password
+        ) {
+          setErr("Please fill all mandatory fields");
+          return;
+        }
+
+        const users = JSON.parse(localStorage.getItem("ett_users") || "[]");
+
+        const exists = users.find(
+          u => u.email === reg.email
+        );
+
+        if (exists) {
+          setErr("Account already exists");
+          return;
+        }
+
+        const newUser = {
+          id: Date.now().toString(),
+          name: reg.name,
+          district: reg.district,
+          designation: reg.designation,
+          email: reg.email,
+          school: reg.school,
+          cluster: reg.cluster,
+          password: reg.password,
+          role: "viewer",
+          avatar: reg.name
+            .split(" ")
+            .map(x => x[0])
+            .join("")
+            .toUpperCase()
+        };
+
+        users.push(newUser);
+
+        localStorage.setItem(
+          "ett_users",
+          JSON.stringify(users)
+        );
+
+        onRegister(newUser);
+      };
+
+      return (
+        <div style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "linear-gradient(180deg,#fff 0%,#fff7ef 100%)",
+          padding: 16
+        }}>
+          <div style={{
+            width: "100%",
+            maxWidth: 450,
+            background: "#fff",
+            borderRadius: 16,
+            padding: 28,
+            boxShadow: "0 18px 48px rgba(234,108,10,.16)"
+          }}>
+
+            <div style={{ textAlign: "center", marginBottom: 24 }}>
+              <AfricaLogo size={60} variant="black" />
+              <h1 style={{ margin: "12px 0 5px" }}>
+                ETT Malawi
+              </h1>
+              <p style={{ color: "#6b7280" }}>
+                Ujamaa Pamodzi Africa
+              </p>
+            </div>
+
+            {/* CHOICE SCREEN */}
+            {mode === "choice" && (
+              <>
+                <Btn
+                  full
+                  onClick={() => setMode("login")}
+                  style={{ marginBottom: 12 }}
+                >
+                  Login
+                </Btn>
+
+                <Btn
+                  full
+                  variant="secondary"
+                  onClick={() => setMode("register")}
+                  style={{ marginBottom: 12 }}
+                >
+                  Create Account
+                </Btn>
+
+                <Btn
+                  full
+                  variant="ghost"
+                  onClick={onPublicView}
+                >
+                  View Public Dashboard
+                </Btn>
+              </>
+            )}
+
+            {/* LOGIN */}
+            {mode === "login" && (
+              <>
+                <h2 style={{ marginBottom: 18 }}>
+                  Sign In
+                </h2>
+
+                <FInput
+                  label="Email"
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                />
+
+                <FInput
+                  label="Password"
+                  type="password"
+                  value={pass}
+                  onChange={e => setPass(e.target.value)}
+                />
+
+                {err && (
+                  <div style={{
+                    background: "#fee2e2",
+                    color: "#991b1b",
+                    padding: 10,
+                    borderRadius: 8,
+                    marginBottom: 12,
+                    fontSize: 12
+                  }}>
+                    {err}
+                  </div>
+                )}
+
+                <Btn
+                  full
+                  onClick={doLogin}
+                  disabled={loading}
+                >
+                  {loading ? "Signing In..." : "Sign In"}
+                </Btn>
+
+                <div style={{ marginTop: 12 }}>
+                  <Btn
+                    variant="ghost"
+                    onClick={() => setMode("choice")}
+                  >
+                    ← Back
+                  </Btn>
+                </div>
+              </>
+            )}
+
+            {/* REGISTER */}
+            {mode === "register" && (
+              <>
+                <h2 style={{ marginBottom: 18 }}>
+                  Create Account
+                </h2>
+
+                <FInput
+                  label="Full Name *"
+                  value={reg.name}
+                  onChange={e => setReg({ ...reg, name: e.target.value })}
+                />
+
+                <FSelect
+                  label="District *"
+                  value={reg.district}
+                  onChange={e => setReg({ ...reg, district: e.target.value })}
+                >
+                  <option value="">Select district</option>
+
+                  {DISTRICT_LIST.map(d => (
+                    <option key={d}>{d}</option>
+                  ))}
+                </FSelect>
+
+                <FInput
+                  label="Designation *"
+                  value={reg.designation}
+                  onChange={e => setReg({ ...reg, designation: e.target.value })}
+                />
+
+                <FInput
+                  label="Email *"
+                  type="email"
+                  value={reg.email}
+                  onChange={e => setReg({ ...reg, email: e.target.value })}
+                />
+
+                <FInput
+                  label="School Name"
+                  value={reg.school}
+                  onChange={e => setReg({ ...reg, school: e.target.value })}
+                />
+
+                <FInput
+                  label="Cluster Name"
+                  value={reg.cluster}
+                  onChange={e => setReg({ ...reg, cluster: e.target.value })}
+                />
+
+                <FInput
+                  label="Password *"
+                  type="password"
+                  value={reg.password}
+                  onChange={e => setReg({ ...reg, password: e.target.value })}
+                />
+
+                {err && (
+                  <div style={{
+                    background: "#fee2e2",
+                    color: "#991b1b",
+                    padding: 10,
+                    borderRadius: 8,
+                    marginBottom: 12,
+                    fontSize: 12
+                  }}>
+                    {err}
+                  </div>
+                )}
+
+                <Btn
+                  full
+                  onClick={createAccount}
+                >
+                  Create Account
+                </Btn>
+
+                <div style={{ marginTop: 12 }}>
+                  <Btn
+                    variant="ghost"
+                    onClick={() => setMode("choice")}
+                  >
+                    ← Back
+                  </Btn>
+                </div>
+              </>
+            )}
+
+          </div>
+        </div>
+      );
+    }
+
+
+    // ─────────────────────────────────────────────
+    // SIDEBAR
+    // ─────────────────────────────────────────────
+    function Sidebar({ page, setPage, user, onLogout, open, onClose }) {
+      const groups = user ? (NAV_GROUPS[user.role] || []) : PUBLIC_NAV;
+      const rc = user ? ROLE_CFG[user.role] : null;
+      const [isMobile, setIsMobile] = useState(window.innerWidth <= 820);
+
+      useEffect(() => {
+        const handle = () => setIsMobile(window.innerWidth <= 820);
+        window.addEventListener('resize', handle);
+        return () => window.removeEventListener('resize', handle);
+      }, []);
+
+      // Hide sidebar entirely when not on dashboard
+      if (page !== "dashboard") return null;
+      if (!open) return null;
+
+      return (
+        <>
+          {/* Backdrop */}
+          <div
+            onClick={onClose}
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,0.45)",
+              zIndex: 998,
+              animation: "fadeIn .2s ease"
+            }}
+          />
+
+          {/* Sidebar panel */}
+          <div
+            style={{
+              position: "fixed",
+              // Desktop: slide from top. Mobile: slide from left
+              ...(isMobile ? {
+                top: 0,
+                left: 0,
+                bottom: 0,
+                width: "78vw",
+                maxWidth: 300,
+                animation: "slideInLeft .25s ease"
+              } : {
+                top: 52,  // below topbar
+                left: 0,
+                right: 0,
+                width: "100%",
+                maxHeight: "80vh",
+                animation: "slideInDown .25s ease"
+              }),
+              background: `linear-gradient(165deg,${SIDEBAR_A} 0%,${SIDEBAR_B} 100%)`,
+              zIndex: 999,
+              display: "flex",
+              flexDirection: isMobile ? "column" : "row",
+              overflowY: "auto",
+              boxShadow: isMobile
+                ? "4px 0 32px rgba(0,0,0,.3)"
+                : "0 8px 32px rgba(59,38,33,.28)",
+              borderRadius: isMobile ? "0 16px 16px 0" : "0 0 16px 16px",
+            }}
+          >
+            <style>{`
+          @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+          @keyframes slideInLeft{from{transform:translateX(-100%)}to{transform:translateX(0)}}
+          @keyframes slideInDown{from{transform:translateY(-100%)}to{transform:translateY(0)}}
+        `}</style>
+
+            {/* Mobile: brand header */}
+            {isMobile && (
+              <div style={{ padding: "16px 14px 12px", borderBottom: "1px solid rgba(255,255,255,.1)", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                  <AfricaLogo size={30} />
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: "#fff" }}>{APP_NAME}</div>
+                    <div style={{ fontSize: 9, color: "rgba(255,255,255,.5)" }}>Ujamaa Pamodzi Africa</div>
+                  </div>
+                </div>
+                <button onClick={onClose} style={{ background: "rgba(255,255,255,.1)", border: "none", borderRadius: 20, width: 28, height: 28, fontSize: 16, cursor: "pointer", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+              </div>
+            )}
+
+            {/* Nav — horizontal on desktop, vertical on mobile */}
+            <nav
+              style={{
+                flex: 1,
+                display: "flex",
+                flexDirection: isMobile ? "column" : "row",
+                flexWrap: isMobile ? "nowrap" : "wrap",
+                padding: isMobile ? "6px 0" : "10px 16px",
+                gap: isMobile ? 0 : 4,
+                overflowY: isMobile ? "auto" : "visible",
+                alignItems: isMobile ? "stretch" : "center",
+              }}
+            >
+              {groups.map(g => (
+                <div
+                  key={g.group}
+                  style={{
+                    display: "flex",
+                    flexDirection: isMobile ? "column" : "row",
+                    gap: isMobile ? 0 : 2,
+                  }}
+                >
+                  {/* Group label — only on mobile */}
+                  {isMobile && (
+                    <div style={{ padding: "8px 14px 3px", fontSize: 9, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "rgba(255,255,255,.42)" }}>{g.group}</div>
+                  )}
+
+                  {g.items.map(item => (
+                    <div
+                      key={item.id}
+                      onClick={() => { setPage(item.id); onClose(); }}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: isMobile ? 9 : 6,
+                        padding: isMobile ? "9px 13px" : "7px 12px",
+                        margin: isMobile ? "1px 8px" : "0 2px",
+                        borderRadius: 9,
+                        fontSize: isMobile ? 12.5 : 12,
+                        fontWeight: 600,
+                        color: "rgba(255,255,255,.82)",
+                        cursor: "pointer",
+                        background: "transparent",
+                        transition: "all .13s",
+                        whiteSpace: "nowrap",
+                        borderLeft: isMobile ? `3px solid transparent` : "none",
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.background = "rgba(234,108,10,.28)"; e.currentTarget.style.color = "#fff"; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "rgba(255,255,255,.82)"; }}
+                    >
+                      <span style={{ fontSize: isMobile ? 13 : 14, flexShrink: 0 }}>{item.i}</span>
+                      {item.l}
+                    </div>
+                  ))}
+
+                  {/* Divider on mobile between groups */}
+                  {isMobile && <div style={{ height: 1, background: "rgba(255,255,255,.08)", margin: "4px 0" }} />}
+                </div>
+              ))}
+            </nav>
+
+            {/* Mobile: user footer */}
+            {isMobile && (
+              <div style={{ padding: "11px 13px", borderTop: "1px solid rgba(255,255,255,.1)", flexShrink: 0 }}>
+                {!user ? (
+                  <Btn full onClick={() => { setPage("login"); onClose(); }}>Sign In</Btn>
+                ) : (
+                  <>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9 }}>
+                      <div style={{ width: 30, height: 30, borderRadius: "50%", background: OR, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{user.avatar}</div>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 11.5, fontWeight: 700, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user.name}</div>
+                        <Badge text={rc.label} color={rc.color} bg={rc.bg} />
+                      </div>
+                    </div>
+                    <button onClick={() => { onLogout(); onClose(); }} style={{ width: "100%", padding: "6px", borderRadius: 6, border: "none", background: OR_PALE, color: OR_D, fontSize: 11.5, cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>Sign Out</button>
+                  </>
+                )}
+                <button style={{ width: "100%", padding: "5px", borderRadius: 6, border: "none", background: "rgba(220,38,38,.16)", color: "#fca5a5", fontSize: 11, cursor: "pointer", fontFamily: "inherit", marginTop: 5 }}>🆘 Helpline: 116</button>
+              </div>
+            )}
+
+          </div>
+        </>
+      );
+    }
+
+ // ─────────────────────────────────────────────
+// DASHBOARD  (role-aware)
+// ─────────────────────────────────────────────
+function Dashboard({ user, reports, setPage }) {
+  const currentUser = user || { role: "viewer", name: "Public Viewer", district: null };
+  const isPublic = !user;
+  const my = (currentUser.role === "data_entry" || currentUser.role === "tot")
+    ? reports.filter(r => r.submitted_by === currentUser.name)
+    : currentUser.role === "district_coordinator"
+    ? reports.filter(r => r.district === currentUser.district)
+    : reports;
+  const pending  = my.filter(r => r.status === "pending").length;
+  const approved = my.filter(r => r.status === "approved").length;
+  const students = my.reduce((a, r) => a + r.boys + r.girls, 0);
+  const rc = ROLE_CFG[currentUser.role];
+
+  // ── Tracking data ──────────────────────────────────────────────────
+  const YEARLY_DATA = [
+    { year: "2023", schools: 116,  teachers: 228,  learners: 45600,  targetSchools: 225,   targetLearners: 45000 },
+    { year: "2024", schools: 357,  teachers: 727,  learners: 145400, targetSchools: 950,   targetLearners: 190000 },
+    { year: "2025", schools: 975,  teachers: 1973, learners: 395000, targetSchools: 3000,  targetLearners: 600000, current: true },
+    { year: "2026", schools: 18,   teachers: 36,   learners: 7200,   targetSchools: 6000,  targetLearners: 1200000 },
+    { year: "2027", schools: 0,    teachers: 0,    learners: 0,      targetSchools: 10000, targetLearners: 2000000, planned: true },
+  ];
+
+  const PROJECTS = [
+    {
+      tag: "JPGE", label: "JPGE Project", period: "2015–2022",
+      total: 63128, color: "#1a5fa8", pale: "#e6f1fb",
+      districts: ["Kasungu", "Dedza", "Salima", "Mangochi"],
+      boys:  [8406, 9732, 10829, 15155],
+      girls: [841,  1094,  9966, 14000],
+    },
+    {
+      tag: "CWA", label: "CWA Project", period: "2022–2023",
+      total: 1738, color: "#0f6e56", pale: "#e1f5ee",
+      districts: ["Mzimba", "Mchinji", "Lilongwe"],
+      boys:  [175, 152, 167],
+      girls: [181, 186, 187],
+    },
+    {
+      tag: "LSN", label: "LSN Project", period: "Special Needs 2024–2025",
+      total: 4974, color: "#854f0b", pale: "#faeeda",
+      districts: ["Mzimba","Blantyre","Lilongwe","Dowa","Kasungu","Machinga","Zomba","Ntcheu"],
+      boys:  [260, 313, 200, 239, 340, 450, 215, 521],
+      girls: [313, 260, 205, 239, 349, 357, 227, 2471],
+    },
+    {
+      tag: "STEVENS", label: "Stevens", period: "2020",
+      total: 8937, color: "#993c1d", pale: "#faece7",
+      districts: ["Salima","Dedza","Mangochi","Nsanje","Nkhata Bay","Mzimba","Dowa","Ntchisi"],
+      boys:  [801, 850, 374, 360, 360, 360, 260, 260],
+      girls: [925, 511, 374, 360, 360, 361, 458, 260],
+    },
+  ];
+
+  const SUMMARY_BADGES = [
+    { label: "Total Clusters", value: "393", color: "#854f0b", pale: "#faeeda" },
+    { label: "ToTs",           value: "722", color: "#185fa5", pale: "#e6f1fb" },
+    { label: "Total Meetings", value: "371", color: "#0f6e56", pale: "#e1f5ee" },
+    { label: "Senior ToTs",    value: "9",   color: "#534ab7", pale: "#eeedfe" },
+  ];
+
+  // Overall gender totals across all projects (for donut)
+  const totalBoys  = PROJECTS.reduce((s, p) => s + p.boys.reduce((a, b) => a + b, 0), 0);
+  const totalGirls = PROJECTS.reduce((s, p) => s + p.girls.reduce((a, b) => a + b, 0), 0);
+
+  // ── Chart.js colours ──────────────────────────────────────────────
+  const C_BLUE  = "#378ADD";
+  const C_RED   = "#D85A30";
+  const C_GREEN = "#1D9E75";
+  const C_AMBER = "#BA7517";
+  const C_GRID  = "rgba(0,0,0,0.05)";
+  const C_TICK  = "#9ca3af";
+
+  // ── Chart refs ────────────────────────────────────────────────────
+  const chartRefs = React.useRef({});
+
+  const mkBar = (ctx, labels, datasets, opts = {}) => new Chart(ctx, {
+    type: "bar",
+    data: { labels, datasets: datasets.map(d => ({ borderRadius: 3, ...d })) },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { mode: "index", intersect: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: C_TICK, font: { size: opts.xSize || 10 }, maxRotation: opts.rotate || 0 } },
+        y: { grid: { color: C_GRID },  ticks: { color: C_TICK, font: { size: 10 } } },
+      },
+    },
+  });
+
+  const mkLine = (ctx, labels, datasets) => new Chart(ctx, {
+    type: "line",
+    data: { labels, datasets: datasets.map(d => ({ fill: true, tension: 0.35, pointRadius: 5, pointHoverRadius: 7, ...d })) },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { mode: "index", intersect: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: C_TICK, font: { size: 11 } } },
+        y: { grid: { color: C_GRID },  ticks: { color: C_TICK, font: { size: 11 } } },
+      },
+    },
+  });
+
+  const mkDonut = (ctx, labels, data, colors, total) => new Chart(ctx, {
+    type: "doughnut",
+    data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 0, hoverOffset: 6 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      cutout: "68%",
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: {
+          label: (item) => ` ${item.label}: ${item.parsed.toLocaleString()} (${Math.round(item.parsed / total * 100)}%)`,
+        }},
+      },
+    },
+  });
+
+  React.useEffect(() => {
+    if (typeof Chart === "undefined") return;
+    const kill = (id) => { if (chartRefs.current[id]) { chartRefs.current[id].destroy(); delete chartRefs.current[id]; } };
+
+    // 1. LINE — learners vs target
+    const lineCtx = document.getElementById("up-line-learners");
+    if (lineCtx) {
+      kill("line-learners");
+      chartRefs.current["line-learners"] = mkLine(
+        lineCtx,
+        YEARLY_DATA.map(d => d.year),
+        [
+          { label: "Actual learners", data: YEARLY_DATA.map(d => d.learners), borderColor: C_BLUE, backgroundColor: "rgba(55,138,221,0.08)", pointBackgroundColor: C_BLUE },
+          { label: "Target learners", data: YEARLY_DATA.map(d => d.targetLearners), borderColor: C_AMBER, backgroundColor: "rgba(186,117,23,0.06)", borderDash: [5,4], pointBackgroundColor: C_AMBER },
+        ]
+      );
+    }
+
+    // 2. BAR — schools & teachers per year
+    const barYearCtx = document.getElementById("up-bar-year");
+    if (barYearCtx) {
+      kill("bar-year");
+      chartRefs.current["bar-year"] = mkBar(
+        barYearCtx,
+        YEARLY_DATA.map(d => d.year),
+        [
+          { label: "Schools reached",  data: YEARLY_DATA.map(d => d.schools),  backgroundColor: C_BLUE },
+          { label: "Teachers trained", data: YEARLY_DATA.map(d => d.teachers), backgroundColor: C_GREEN },
+        ]
+      );
+    }
+
+    // 3. DONUT — overall gender split
+    const donutCtx = document.getElementById("up-donut-gender");
+    if (donutCtx) {
+      kill("donut-gender");
+      chartRefs.current["donut-gender"] = mkDonut(donutCtx, ["Boys","Girls"], [totalBoys, totalGirls], [C_BLUE, C_RED], totalBoys + totalGirls);
+    }
+
+    // 4. BAR + DONUT — per project
+    PROJECTS.forEach((p, i) => {
+      const barCtx = document.getElementById(`up-proj-bar-${i}`);
+      if (barCtx) {
+        kill(`proj-bar-${i}`);
+        chartRefs.current[`proj-bar-${i}`] = mkBar(
+          barCtx, p.districts,
+          [
+            { label: "Boys",  data: p.boys,  backgroundColor: C_BLUE },
+            { label: "Girls", data: p.girls, backgroundColor: C_RED },
+          ],
+          { xSize: 9, rotate: 35 }
+        );
+      }
+
+      const donutPCtx = document.getElementById(`up-proj-donut-${i}`);
+      if (donutPCtx) {
+        kill(`proj-donut-${i}`);
+        const pb = p.boys.reduce((a,b) => a+b, 0);
+        const pg = p.girls.reduce((a,b) => a+b, 0);
+        chartRefs.current[`proj-donut-${i}`] = new Chart(donutPCtx, {
+          type: "doughnut",
+          data: { labels: ["Boys","Girls"], datasets: [{ data: [pb, pg], backgroundColor: [C_BLUE, C_RED], borderWidth: 0, hoverOffset: 4 }] },
+          options: {
+            responsive: true, maintainAspectRatio: false, cutout: "62%",
+            plugins: { legend: { display: false }, tooltip: { callbacks: {
+              label: (item) => ` ${item.label}: ${item.parsed.toLocaleString()} (${Math.round(item.parsed/(pb+pg)*100)}%)`,
+            }}},
+          },
+        });
+      }
+    });
+
+    return () => Object.keys(chartRefs.current).forEach(kill);
+  }, []);
+
+  // ── Shared styles ──────────────────────────────────────────────────
+  const S = {
+    card:      { background: "#fff", border: "1px solid #f0f0f0", borderRadius: 16, padding: "18px 20px", boxSizing: "border-box" },
+    label:     { fontSize: 11, color: "#9ca3af", marginBottom: 3 },
+    value:     { fontSize: 22, fontWeight: 700, color: "#111827" },
+    sub:       { fontSize: 10, color: "#c4c4c4", marginTop: 2 },
+    hr:        { border: "none", borderTop: "1px solid #f3f4f6", margin: "10px 0" },
+    dot:       (c) => ({ width: 9, height: 9, borderRadius: 2, background: c, display: "inline-block", marginRight: 4 }),
+    box:       (h) => ({ position: "relative", width: "100%", height: h }),
+    legendRow: { display: "flex", gap: 14, fontSize: 11, color: "#6b7280", flexWrap: "wrap", marginBottom: 10 },
+    eyebrow:   { fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.4, color: "#9ca3af", marginBottom: 4 },
+  };
+
+  const Legend = ({ items }) => (
+    <div style={S.legendRow}>
+      {items.map(([label, color]) => (
+        <span key={label}><span style={S.dot(color)} />{label}</span>
+      ))}
+    </div>
+  );
+
+  return (
+    <div>
+
+      {/* ══ Original: Hero banner ══════════════════════════════════════ */}
+      <div style={{
+        background: "linear-gradient(135deg,#fff 0%,#fff8f1 70%,#fff1e5 100%)",
+        border: `1px solid ${OR_PALE}`, borderRadius: 24, padding: "42px 28px",
+        color: "#111827", margin: "0 auto 24px auto", position: "relative",
+        overflow: "hidden", boxShadow: "0 18px 44px rgba(59,38,33,.10)",
+        textAlign: "center", maxWidth: 1300,
+      }}>
+        <div style={{ position:"absolute", top:-60, right:-60, width:220, height:220, borderRadius:"50%", background:"rgba(234,108,10,.08)" }} />
+        <div style={{ position:"relative", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center" }}>
+          <div style={{ fontSize:11, color:OR, textTransform:"uppercase", letterSpacing:1.4, marginBottom:10, fontWeight:800 }}>
+            {user ? "Welcome back" : "ETT Malawi National Program Dashboard"}
+          </div>
+          <h1 style={{ margin: "0 0 12px", fontSize: "clamp(2rem,5vw,3.5rem)", lineHeight: 1.05, fontWeight: 800, letterSpacing: "-1px", maxWidth: 900 }}>
+            {user ? currentUser.name : "Empowering Safer Schools Across Malawi"}
+          </h1>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, flexWrap:"wrap", marginBottom:24 }}>
+            <span style={{ background:OR_PALE, color:OR_D, padding:"6px 14px", borderRadius:999, fontSize:12, fontWeight:700, display:"flex", alignItems:"center", gap:6 }}>
+              🌍 {user ? rc.label : "Public access"}
+            </span>
+            {currentUser.district && <span style={{ fontSize:12, color:"#6b7280" }}>📍 {currentUser.district}</span>}
+          </div>
+          <div style={{ display:"flex", gap:10, flexWrap:"wrap", justifyContent:"center" }}>
+            {isPublic ? (
+              <>
+                <Btn onClick={() => setPage("maps")}>View Coverage Map</Btn>
+                <Btn onClick={() => setPage("impact")} variant="secondary">Impact Stories</Btn>
+                <Btn onClick={() => setPage("submit")} variant="ghost">Report a Concern</Btn>
+                <Btn onClick={() => setPage("login")} style={{ background:OR, color:"#fff" }}>Staff Login</Btn>
+              </>
+            ) : (
+              <>
+                <Btn onClick={() => setPage("submit")}>Submit Report</Btn>
+                {can(user.role,"approveReport") && pending > 0 && (
+                  <Btn onClick={() => setPage("reports")} style={{ background:OR, color:"#fff" }}>Review ({pending})</Btn>
+                )}
+                {can(user.role,"manageUsers") && (
+                  <Btn onClick={() => setPage("users")} style={{ background:OR, color:"#fff" }}>Manage Users</Btn>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ══ Original: Stat strip ══════════════════════════════════════ */}
+<div style={{
+  display:"grid",
+  gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",
+  gap:14,
+  marginBottom:24
+}}>
+  {isPublic ? (
+    <>
+      <StatCard icon="👨‍🎓" label="Learners Reached" value="107,080+" />
+      <StatCard icon="🏫" label="Schools Covered" value="975" />
+      <StatCard icon="📍" label="Districts Active" value="15" />
+      <StatCard icon="🎓" label="TOTs Trained" value="722+" />
+      <StatCard icon="📘" label="Sessions Conducted" value="1,240+" />
+      <StatCard icon="🌍" label="Coverage Progress" value="69%" />
+    </>
+  ) : (
+    <>
+      <StatCard icon="📋" label="Reports" value={my.length} />
+      <StatCard icon="⏳" label="Pending" value={pending} />
+      <StatCard icon="✅" label="Approved" value={approved} />
+      <StatCard icon="👨‍🎓" label="Students" value={students} />
+    </>
+  )}
+</div>
+
+{/* ══ Original: Program Impact ══════════════════════════════════ */}
+{isPublic && (
+  <Card style={{ marginBottom:24 }}>
+    <SH title="Program Impact Across Malawi" />
+
+    <div style={{
+      display:"grid",
+      gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",
+      gap:18,
+      alignItems:"stretch"
+    }}>
+      {[
+        {
+          icon:"👦",
+          title:"Boys Empowerment",
+          text:"Helping boys become respectful and responsible young men.",
+          color:"#e8f4f8"
+        },
+        {
+          icon:"👧",
+          title:"Girls Empowerment",
+          text:"Building confidence, safety awareness and leadership skills.",
+          color:"#fdf2f8"
+        },
+        {
+          icon:"🌍",
+          title:"Community Protection",
+          text:"Supporting safer schools and communities across Malawi.",
+          color:"#f0f9f0"
+        },
+      ].map((item, i) => (
+        <div
+          key={i}
+          style={{
+            background:"#fff",
+            border:"1px solid #e5e7eb",
+            borderRadius:20,
+            padding:"20px",
+            display:"flex",
+            alignItems:"flex-start",
+            gap:16,
+            boxSizing:"border-box",
+            transition:"all .2s ease",
+            cursor:"pointer",
+            boxShadow:"0 2px 4px rgba(0,0,0,0.02)",
+            width:"100%",
+            minWidth:0
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.boxShadow="0 8px 20px rgba(0,0,0,0.08)";
+            e.currentTarget.style.transform="translateY(-2px)";
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.boxShadow="0 2px 4px rgba(0,0,0,0.02)";
+            e.currentTarget.style.transform="translateY(0)";
+          }}
+        >
+          <div style={{
+            width:52,
+            minWidth:52,
+            height:52,
+            borderRadius:16,
+            background:item.color,
+            display:"flex",
+            alignItems:"center",
+            justifyContent:"center",
+            fontSize:26
+          }}>
+            {item.icon}
+          </div>
+
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{
+              fontWeight:700,
+              fontSize:16,
+              marginBottom:6,
+              color:"#111827"
+            }}>
+              {item.title}
+            </div>
+
+            <div style={{
+              fontSize:13.5,
+              lineHeight:1.55,
+              color:"#6b7280"
+            }}>
+              {item.text}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  </Card>
+)}
+
+{/* ══ Original: Main grid ═══════════════════════════════════════ */}
+<div style={{
+  display:"grid",
+  gridTemplateColumns:"repeat(auto-fit,minmax(340px,1fr))",
+  gap:20,
+  alignItems:"start",
+  width:"100%"
+}}>
+
+  {!isPublic && (
+    <Card
+      style={{
+        overflow:"hidden",
+        width:"100%",
+        minWidth:0,
+        padding:"20px 0 0 0"
+      }}
+    >
+      <div style={{ padding:"0 20px" }}>
+        <SH
+          title="Recent Reports"
+          action={
+            user
+              ? (
+                <Btn
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setPage(user.role==="data_entry"?"my_reports":"reports")}
+                >
+                  View All →
+                </Btn>
+              )
+              : (
+                <Btn
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setPage("login")}
+                >
+                  Sign In →
+                </Btn>
+              )
+          }
+        />
+      </div>
+
+      <div style={{
+        overflowX:"auto",
+        width:"100%",
+        marginTop:8
+      }}>
+        <table style={{
+          width:"100%",
+          borderCollapse:"collapse",
+          minWidth:700,
+          fontSize:13
+        }}>
+          <TH cols={["School","District","Curriculum","Students","Status","Date"]} />
+
+          <tbody>
+            {my.slice(0,5).map(r => (
+              <tr
+                key={r.id}
+                style={{ borderBottom:"1px solid #f3f4f6" }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.background="#fafafa";
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background="transparent";
+                }}
+              >
+                <td style={{
+                  padding:"14px 12px",
+                  fontWeight:600,
+                  whiteSpace:"nowrap"
+                }}>
+                  {r.school}
+                </td>
+
+                <td style={{
+                  padding:"14px 12px",
+                  color:"#6b7280"
+                }}>
+                  {r.district}
+                </td>
+
+                <td style={{ padding:"14px 12px" }}>
+                  <Badge text={r.curriculum} />
+                </td>
+
+                <td style={{
+                  padding:"14px 12px",
+                  color:"#6b7280",
+                  fontWeight:500
+                }}>
+                  {r.boys+r.girls}
+                </td>
+
+                <td style={{ padding:"14px 12px" }}>
+                  <Pill s={r.status} />
+                </td>
+
+                <td style={{
+                  padding:"14px 12px",
+                  color:"#9ca3af",
+                  fontSize:11,
+                  whiteSpace:"nowrap"
+                }}>
+                  {r.submitted_at}
+                </td>
+              </tr>
+            ))}
+
+            {my.length===0 && (
+              <tr>
+                <td
+                  colSpan={6}
+                  style={{
+                    padding:48,
+                    textAlign:"center",
+                    color:"#9ca3af",
+                    fontSize:14
+                  }}
+                >
+                  📭 No reports yet
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  )}
+
+  {/* ══════════════════════════════════════════════════════════════
+      NEW ─ Ujamaa Pamodzi Numbers Tracking Tool
+  ══════════════════════════════════════════════════════════════ */}
+
+  <div style={{ marginTop:0, width:"100%" }}>
+
+    {/* Section header */}
+    <div style={{
+      display:"flex",
+      alignItems:"center",
+      justifyContent:"space-between",
+      flexWrap:"wrap",
+      gap:10,
+      marginBottom:16
+    }}>
+      <div>
+        <div style={S.eyebrow}>
+          Ujamaa Pamodzi · Numbers Tracking Tool
+        </div>
+
+        <div style={{
+          fontSize:20,
+          fontWeight:800,
+          color:"#111827"
+        }}>
+          Transition to Scale-Up
+        </div>
+      </div>
+
+      <div style={{
+        display:"flex",
+        gap:7,
+        flexWrap:"wrap"
+      }}>
+        {SUMMARY_BADGES.map(b => (
+          <span
+            key={b.label}
+            style={{
+              background:b.pale,
+              color:b.color,
+              padding:"4px 12px",
+              borderRadius:999,
+              fontSize:11,
+              fontWeight:700
+            }}
+          >
+            {b.value} {b.label}
+          </span>
+        ))}
+      </div>
+    </div>
+
+    {/* Yearly milestone cards */}
+    <div style={{
+      display:"grid",
+      gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",
+      gap:16,
+      marginBottom:24,
+      alignItems:"stretch"
+    }}>
+      {YEARLY_DATA.map(d => (
+        <div
+          key={d.year}
+          style={{
+            ...S.card,
+            border:d.current
+              ? "1.5px solid #378ADD"
+              : "1px solid #f0f0f0",
+            background:d.planned ? "#fafafa" : "#fff"
+          }}
+        >
+          <div style={{
+            display:"flex",
+            justifyContent:"space-between",
+            alignItems:"center",
+            marginBottom:10
+          }}>
+            <span style={{
+              fontSize:13,
+              fontWeight:700,
+              color:d.planned ? "#c4c4c4" : "#185fa5"
+            }}>
+              {d.year}
+            </span>
+
+            {d.current && (
+              <span style={{
+                fontSize:9,
+                fontWeight:700,
+                background:"#e6f1fb",
+                color:"#185fa5",
+                padding:"2px 7px",
+                borderRadius:999
+              }}>
+                Current
+              </span>
+            )}
+
+            {d.planned && (
+              <span style={{
+                fontSize:9,
+                fontWeight:700,
+                background:"#f3f4f6",
+                color:"#9ca3af",
+                padding:"2px 7px",
+                borderRadius:999
+              }}>
+                Planned
+              </span>
+            )}
+          </div>
+
+          <div style={S.label}>Schools reached</div>
+          <div style={{
+            ...S.value,
+            fontSize:18,
+            color:d.planned ? "#c4c4c4" : "#111827"
+          }}>
+            {d.schools.toLocaleString()}
+          </div>
+
+          <hr style={S.hr} />
+
+          <div style={S.label}>Teachers trained</div>
+          <div style={{
+            ...S.value,
+            fontSize:18
+          }}>
+            {d.teachers.toLocaleString()}
+          </div>
+
+          <hr style={S.hr} />
+
+          <div style={S.label}>Learners trained</div>
+          <div style={{
+            ...S.value,
+            fontSize:18
+          }}>
+            {d.learners.toLocaleString()}
+          </div>
+
+          <div style={S.sub}>
+            target {d.targetSchools.toLocaleString()} schools ·{" "}
+            {d.targetLearners.toLocaleString()} learners
+          </div>
+        </div>
+      ))}
+    </div>
+
+    {/* CHART ROW */}
+    <div style={{
+      display:"grid",
+      gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",
+      gap:20,
+      marginBottom:20
+    }}>
+
+      <div style={S.card}>
+        <div style={{
+          fontSize:13,
+          fontWeight:700,
+          color:"#111827",
+          marginBottom:2
+        }}>
+          Learners Trained vs Target
+        </div>
+
+        <div style={{
+          fontSize:11,
+          color:"#9ca3af",
+          marginBottom:10
+        }}>
+          Actual vs target across all years
+        </div>
+
+        <Legend items={[
+          ["Actual learners", C_BLUE],
+          ["Target", C_AMBER]
+        ]} />
+
+        <div style={S.box(200)}>
+          <canvas id="up-line-learners" />
+        </div>
+      </div>
+
+      <div style={S.card}>
+        <div style={{
+          fontSize:13,
+          fontWeight:700,
+          color:"#111827",
+          marginBottom:2
+        }}>
+          Schools Reached & Teachers Trained
+        </div>
+
+        <div style={{
+          fontSize:11,
+          color:"#9ca3af",
+          marginBottom:10
+        }}>
+          Annual totals across transition period
+        </div>
+
+        <Legend items={[
+          ["Schools reached", C_BLUE],
+          ["Teachers trained", C_GREEN]
+        ]} />
+
+        <div style={S.box(200)}>
+          <canvas id="up-bar-year" />
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+{/* ══ Bottom Information Panels ═════════════════════════════ */}
+<div style={{
+  marginTop:32,
+  display:"grid",
+  gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",
+  gap:20,
+  alignItems:"stretch",
+  width:"100%"
+}}>
+
+        {/* Quick Actions */}
+        <Card style={{ padding:"20px" }}>
+          <SH title="Quick Actions" />
+          <div style={{ display:"grid", gap:12, marginTop:8 }}>
+            <Btn onClick={() => setPage("submit")} full style={{ fontWeight:600, padding:"12px 16px" }}>
+              📝 {user ? "Submit Report" : "Report Case"}
+            </Btn>
+
+            {user && (
+              <Btn
+                variant="secondary"
+                onClick={() => setPage("curriculum")}
+                full
+                style={{ fontWeight:500, padding:"12px 16px" }}
+              >
+                📘 Curriculum
+              </Btn>
+            )}
+
+            <Btn
+              variant="ghost"
+              onClick={() => setPage("maps")}
+              full
+              style={{ fontWeight:500, padding:"12px 16px" }}
+            >
+              🗺️ View Maps
+            </Btn>
+
+            {user && (
+              <Btn
+                variant="ghost"
+                onClick={() => setPage("analytics")}
+                full
+                style={{ fontWeight:500, padding:"12px 16px" }}
+              >
+                📊 Analytics
+              </Btn>
+            )}
+          </div>
+        </Card>
+
+        {/* Emergency Contacts */}
+        <Card style={{
+          background:"linear-gradient(135deg,#fff7ef 0%,#fffbf5 100%)",
+          border:"1px solid #fde7cf",
+          padding:"20px",
+          position:"relative",
+          overflow:"hidden"
+        }}>
+          <div style={{
+            position:"absolute",
+            top:-20,
+            right:-20,
+            fontSize:80,
+            opacity:0.08,
+            pointerEvents:"none"
+          }}>
+            🆘
+          </div>
+
+          <div style={{
+            fontSize:12,
+            fontWeight:800,
+            textTransform:"uppercase",
+            letterSpacing:1,
+            color:"#92400e",
+            marginBottom:14
+          }}>
+            ⚡ Emergency Contacts
+          </div>
+
+          <div style={{
+            fontSize:14,
+            lineHeight:2,
+            color:"#374151",
+            position:"relative",
+            zIndex:1
+          }}>
+            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:6 }}>
+              <span style={{ fontSize:18 }}>🆘</span>
+              <span><b>Child Helpline:</b> 116</span>
+            </div>
+
+            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:6 }}>
+              <span style={{ fontSize:18 }}>👮</span>
+              <span><b>VSU Police:</b> 997</span>
+            </div>
+
+            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+              <span style={{ fontSize:18 }}>📧</span>
+              <span><b>Email:</b> info@ujamaa.mw</span>
+            </div>
+          </div>
+        </Card>
+
+        {/* Districts by Region */}
+        <Card>
+          <SH
+            title="Districts by Region"
+            action={
+              <Btn
+                size="sm"
+                variant="secondary"
+                onClick={() => setPage("districts")}
+              >
+                View All →
+              </Btn>
+            }
+          />
+
+          <div style={{
+            display:"grid",
+            gridTemplateColumns:"1fr",
+            gap:14
+          }}>
+            {[
+              {
+                r:"Northern",
+                active:"6/6",
+                ds:["Chitipa","Karonga","Rumphi","Nkhata Bay","Mzimba","Likoma"]
+              },
+              {
+                r:"Central",
+                active:"6/9",
+                ds:["Lilongwe","Dowa","Kasungu","Dedza","Ntcheu","Nkhotakota"]
+              },
+              {
+                r:"Southern",
+                active:"10/13",
+                ds:["Blantyre","Zomba","Mangochi","Thyolo","Mulanje","Balaka"]
+              },
+            ].map(g => (
+              <div key={g.r}>
+                <div style={{
+                  display:"flex",
+                  justifyContent:"space-between",
+                  fontSize:12,
+                  fontWeight:700,
+                  marginBottom:7
+                }}>
+                  <span>{g.r}</span>
+                  <span style={{ color:OR }}>{g.active}</span>
+                </div>
+
+                <div style={{
+                  display:"flex",
+                  flexWrap:"wrap",
+                  gap:6
+                }}>
+                  {g.ds.map(d => (
+                    <span
+                      key={d}
+                      onClick={() => setPage("districts")}
+                      style={{ padding:"4px 9px", borderRadius:7, fontSize:11, fontWeight:600, background:OR_PALE, color:OR_D, cursor:"pointer" }}
+                    >
+                      {d}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+      </div>
+  );
+}
+    // ─────────────────────────────────────────────
+    // SUBMIT REPORT
+    // ─────────────────────────────────────────────
+    
+    function SubmitReport({ user, onSubmit, showToast }) {
+      const isPublic = !user;
+      const assignedCluster = user?.role === "tot" ? CLUSTERS.find(c => c.id === user.clusterId) : null;
+      const E = isPublic
+        ? { school: "", district: "", zone: "", boys: "", girls: "", curriculum: "Harassment or intimidation", session: "", challenges: "", success: "" }
+        : { school: "", district: user?.district || "", zone: assignedCluster?.name || "", boys: "", girls: "", curriculum: "HIM", session: "", challenges: "", success: "" };
+      const [f, setF] = useState(E);
+      const [done, setDone] = useState(false);
+      const s = k => e => setF(p => ({ ...p, [k]: e.target.value }));
+
+      const submit = () => {
+        if (isPublic) {
+          if (!f.school || !f.district || !f.session) { showToast("Please fill in the required case details"); return; }
+          onSubmit({ ...f, boys: parseInt(f.boys) || 0, girls: parseInt(f.girls) || 0, zone: f.zone || "Not specified", status: "pending", submitted_by: "Public case report", submitted_at: new Date().toISOString().split("T")[0] });
+          setDone(true); showToast("Case report sent for safe review");
+          return;
+        }
+        if (!f.school || !f.district || !f.zone || !f.session) { showToast("⚠️ Please fill in all required fields"); return; }
+        onSubmit({ ...f, boys: parseInt(f.boys) || 0, girls: parseInt(f.girls) || 0, status: "pending", submitted_by: user.name, submitted_at: new Date().toISOString().split("T")[0] });
+        setDone(true); showToast("✅ Report submitted — awaiting review");
+      };
+
+      if (done) return (
+        // ✅ CENTER WRAPPER — already had margin:0 auto, keeping it
+        <div style={{ maxWidth: 440, margin: "0 auto", textAlign: "center", padding: 36 }}>
+          <div style={{ fontSize: 52, marginBottom: 10 }}>✅</div>
+          <h2 style={{ margin: "0 0 8px", fontSize: 18, fontWeight: 700 }}>{isPublic ? "Case Report Sent" : "Report Submitted!"}</h2>
+          <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 18 }}>{isPublic ? "Thank you. A trained reviewer can use this information to guide support and referral. If someone is in immediate danger, call Child Helpline 116 or VSU Police 997 now." : "Pending review by your District Coordinator or National Admin."}</p>
+          <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+            <Btn onClick={() => { setF(E); setDone(false); }}>{isPublic ? "Report Another Case" : "Submit Another"}</Btn>
+            <Btn variant="secondary" onClick={() => setDone(false)}>Back</Btn>
+          </div>
+        </div>
+      );
+
+      if (isPublic) return (
+        // ✅ CENTER WRAPPER ADDED HERE
+        <div style={{ maxWidth: 760, margin: "0 auto" }}>
+          <Kicker text="Safe Reporting" />
+          <h1 style={{ margin: "0 0 4px", fontSize: 23, fontWeight: 800, color: BLACK }}>Report a Case</h1>
+          <p style={{ margin: "0 0 14px", color: "#4b5563", fontSize: 13, lineHeight: 1.6 }}>Use this page to report suspected or confirmed SGBV concerns safely. Do not include graphic details. Share only what is needed to help the right people respond.</p>
+
+          <Card style={{ background: BLACK, color: "#fff", border: "none", marginBottom: 14 }}>
+            <div style={{ fontSize: 12.5, lineHeight: 1.7 }}>
+              <b>You can report:</b> sexual harassment, assault, defilement, exploitation, coercion, threats, bullying linked to gender, unsafe school routes, online abuse, forced relationships, child marriage concerns, or urgent protection and referral needs.
+            </div>
+            <div style={{ fontSize: 11.5, color: "rgba(255,255,255,.68)", marginTop: 8 }}>Emergency contacts: Child Helpline 116 · VSU Police 997</div>
+          </Card>
+
+          <Card>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9 }}>
+              <FInput label="Where did it happen? *" placeholder="School, community, route, or online platform" value={f.school} onChange={s("school")} />
+              <FSelect label="District *" value={f.district} onChange={s("district")}>
+                <option value="">Select district...</option>
+                {DISTRICT_LIST.map(d => <option key={d}>{d}</option>)}
+              </FSelect>
+            </div>
+            <FSelect label="What are you reporting? *" value={f.curriculum} onChange={s("curriculum")}>
+              {["Harassment or intimidation", "Sexual assault or attempted assault", "Defilement or abuse of a child", "Exploitation, coercion, or transactional sex", "Threats, stalking, or retaliation", "Online abuse or image-based abuse", "Unsafe school route or unsafe learning space", "Forced relationship or child marriage concern", "Need referral, counselling, or protection support", "Other SGBV concern"].map(x => <option key={x}>{x}</option>)}
+            </FSelect>
+            <FSelect label="Who is affected?" value={f.zone} onChange={s("zone")}>
+              <option value="">Prefer not to say</option>
+              <option>Girl learner</option>
+              <option>Boy learner</option>
+              <option>Young woman</option>
+              <option>Young man</option>
+              <option>Adult woman</option>
+              <option>Adult man</option>
+              <option>Group of learners</option>
+              <option>Other / unknown</option>
+            </FSelect>
+            <FArea label="What happened? *" placeholder="Briefly describe what happened, when it happened, and whether the person is currently safe." value={f.session} onChange={s("session")} />
+            <FArea label="Immediate support needed" placeholder="Medical help, police/VSU support, counselling, safe transport, school protection, referral pathway, or other support." value={f.challenges} onChange={s("challenges")} />
+            <FArea label="Contact or follow-up note" placeholder="Optional. Add a safe contact method or explain if you prefer not to be contacted." value={f.success} onChange={s("success")} />
+            <div style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
+              <Btn onClick={submit}>Send Case Report</Btn>
+              <Btn variant="secondary" onClick={() => setF(E)}>Reset</Btn>
+            </div>
+          </Card>
+        </div>
+      );
+
+      return (
+        // ✅ CENTER WRAPPER ADDED HERE
+        <div style={{ maxWidth: 640, margin: "0 auto" }}>
+          <Kicker text="Field Reporting" />
+          <h1 style={{ margin: "0 0 4px", fontSize: 21, fontWeight: 700 }}>Submit Session Report</h1>
+          <p style={{ margin: "0 0 14px", color: "#6b7280", fontSize: 13 }}>{assignedCluster ? `Record attendance and session delivery for ${assignedCluster.name}.` : "Record attendance, session details, challenges and successes after each school visit."}</p>
+
+          {/* TOT stats bar */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 14 }}>
+            {[["12", "Schools Reported"], ["4", "Clusters Active"], ["21", "Reports Submitted"]].map(([v, l]) => (
+              <div key={l} style={{ background: OR_PALE, borderRadius: 8, padding: "9px", textAlign: "center" }}>
+                <div style={{ fontSize: 20, fontWeight: 700, color: OR }}>{v}</div>
+                <div style={{ fontSize: 10, color: OR_D }}>{l}</div>
+              </div>
+            ))}
+          </div>
+
+          <Card>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9 }}>
+              <FInput label="School Name *" placeholder="e.g. Kawale Primary" value={f.school} onChange={s("school")} />
+              <FSelect label="District *" value={f.district} onChange={s("district")}>
+                <option value="">Select district…</option>
+                {DISTRICT_LIST.map(d => <option key={d}>{d}</option>)}
+              </FSelect>
+            </div>
+            <FInput label={assignedCluster ? "Assigned Cluster *" : "Education Zone *"} placeholder={assignedCluster ? "Assigned cluster" : "e.g. Kawale Zone"} value={f.zone} onChange={s("zone")} readOnly={!!assignedCluster} />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9 }}>
+              <FInput label="Number of Boys" type="number" placeholder="0" min="0" value={f.boys} onChange={s("boys")} />
+              <FInput label="Number of Girls" type="number" placeholder="0" min="0" value={f.girls} onChange={s("girls")} />
+            </div>
+            <FSelect label="Curriculum *" value={f.curriculum} onChange={s("curriculum")}>
+              <option value="HIM">HIM — Hero in Me (Boys)</option>
+              <option value="GESD">GESD — Girls Empowerment</option>
+              <option value="Combined">Combined Session</option>
+            </FSelect>
+            <FSelect label="Session Conducted *" value={f.session} onChange={s("session")}>
+              <option value="">Select session…</option>
+              {(SESSION_LISTS[f.curriculum] || []).map(x => <option key={x}>{x}</option>)}
+            </FSelect>
+            <FArea label="Challenges Faced" placeholder="Any challenges, low attendance, resource gaps…" value={f.challenges} onChange={s("challenges")} />
+            <FArea label="Success Stories" placeholder="Positive outcomes, memorable moments, student engagement…" value={f.success} onChange={s("success")} />
+            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+              <Btn onClick={submit}>📤 Submit Report</Btn>
+              <Btn variant="secondary" onClick={() => setF(E)}>Reset</Btn>
+            </div>
+          </Card>
+
+          {/* Pending reports review (for coordinators/admin) */}
+        </div>
+      );
+    }
+
+    // ─────────────────────────────────────────────
+    // REPORTS PAGE  (with coordinator approve/reject)
+    // ─────────────────────────────────────────────
+    function ReportsPage({ user, reports, onUpdateStatus, showToast }) {
+      const [filt, setFilt] = useState("all");
+      const [search, setSearch] = useState("");
+      const [sel, setSel] = useState(null);
+
+      const visible = reports.filter(r => {
+        if (user.role === "district_coordinator" && r.district !== user.district) return false;
+        if ((user.role === "data_entry" || user.role === "tot") && r.submitted_by !== user.name) return false;
+        if (filt !== "all" && r.status !== filt) return false;
+        const q = search.toLowerCase();
+        if (q && !r.school.toLowerCase().includes(q) && !r.district.toLowerCase().includes(q)) return false;
+        return true;
+      });
+
+      return (
+        <div>
+          <Kicker text="Reporting" />
+          <h1 style={{ margin: "0 0 13px", fontSize: 21, fontWeight: 700 }}>{user.role === "data_entry" ? "My Reports" : "All Session Reports"}</h1>
+          <Card>
+            <FilterBar
+              options={["all", "pending", "approved", "rejected"].map(x => ({ v: x, l: `${x.charAt(0).toUpperCase() + x.slice(1)} (${reports.filter(r => x === "all" ? true : r.status === x).length})` }))}
+              active={filt} onChange={setFilt}
+              search={search} onSearch={setSearch} searchPlaceholder="Search school or district…"
+            />
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                <TH cols={["School", "District", "Curriculum", "Session", "Students", "Status", "Date", "Actions"]} />
+                <tbody>
+                  {visible.map(r => (
+                    <tr key={r.id} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                      <td style={{ padding: "7px 9px", fontWeight: 600 }}>{r.school}</td>
+                      <td style={{ padding: "7px 9px", color: "#6b7280" }}>{r.district}</td>
+                      <td style={{ padding: "7px 9px" }}><Badge text={r.curriculum} /></td>
+                      <td style={{ padding: "7px 9px", color: "#6b7280", fontSize: 11, maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.session}</td>
+                      <td style={{ padding: "7px 9px" }}>{r.boys + r.girls}</td>
+                      <td style={{ padding: "7px 9px" }}><Pill s={r.status} /></td>
+                      <td style={{ padding: "7px 9px", color: "#9ca3af", fontSize: 11 }}>{r.submitted_at}</td>
+                      <td style={{ padding: "7px 9px" }}>
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <Btn size="sm" variant="ghost" onClick={() => setSel(r)}>View</Btn>
+                          {can(user.role, "approveReport") && r.status === "pending" && <>
+                            <Btn size="sm" variant="success" onClick={() => { onUpdateStatus(r.id, "approved"); showToast("✅ Approved"); }}>✓</Btn>
+                            <Btn size="sm" variant="danger" onClick={() => { onUpdateStatus(r.id, "rejected"); showToast("Report rejected"); }}>✗</Btn>
+                          </>}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {visible.length === 0 && <tr><td colSpan={8} style={{ padding: 20, textAlign: "center", color: "#9ca3af" }}>No reports found</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+          {sel && (
+            <Modal title={`Report: ${sel.school}`} onClose={() => setSel(null)}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 13 }}>
+                {[["School", sel.school], ["District", sel.district], ["Zone", sel.zone], ["Curriculum", sel.curriculum], ["Boys", sel.boys], ["Girls", sel.girls], ["Total", sel.boys + sel.girls], ["By", sel.submitted_by], ["Date", sel.submitted_at]].map(([l, v]) => (
+                  <div key={l}><div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase" }}>{l}</div><div style={{ fontSize: 13, fontWeight: 600, marginTop: 2 }}>{v}</div></div>
+                ))}
+              </div>
+              <div style={{ marginBottom: 9 }}><div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", marginBottom: 3 }}>Session</div><div style={{ fontSize: 12.5 }}>{sel.session}</div></div>
+              {sel.challenges && <div style={{ marginBottom: 9 }}><div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", marginBottom: 3 }}>Challenges</div><div style={{ fontSize: 12.5, background: "#fef9c3", padding: "7px 10px", borderRadius: 6 }}>{sel.challenges}</div></div>}
+              {sel.success && <div style={{ marginBottom: 13 }}><div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", marginBottom: 3 }}>Success Stories</div><div style={{ fontSize: 12.5, background: "#d1fae5", padding: "7px 10px", borderRadius: 6 }}>{sel.success}</div></div>}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <Pill s={sel.status} />
+                {can(user.role, "approveReport") && sel.status === "pending" && (
+                  <div style={{ display: "flex", gap: 7 }}>
+                    <Btn variant="success" onClick={() => { onUpdateStatus(sel.id, "approved"); setSel(null); showToast("✅ Approved"); }}>✅ Approve</Btn>
+                    <Btn variant="danger" onClick={() => { onUpdateStatus(sel.id, "rejected"); setSel(null); showToast("Rejected"); }}>Reject</Btn>
+                  </div>
+                )}
+              </div>
+            </Modal>
+          )}
+        </div>
+      );
+    }
+
+    // ─────────────────────────────────────────────
+    // MAPS PAGE  (Leaflet + OpenStreetMap)
+    // ─────────────────────────────────────────────
+    const CLUSTER_SCHOOLS = [
+      {
+        clusterId: 0,
+        schools: [
+          {
+            name: "Kawale Primary",
+            lat: -13.95,
+            lng: 33.80
+          },
+          {
+            name: "Chinsapo Primary",
+            lat: -13.93,
+            lng: 33.78
+          },
+          {
+            name: "Area 25 Primary",
+            lat: -13.98,
+            lng: 33.82
+          }
+        ]
+      },
+
+      {
+        clusterId: 2,
+        schools: [
+          {
+            name: "Mbayani Primary",
+            lat: -15.80,
+            lng: 35.02
+          },
+          {
+            name: "Ndirande LEA",
+            lat: -15.78,
+            lng: 35.01
+          },
+          {
+            name: "Chirimba Primary",
+            lat: -15.82,
+            lng: 35.03
+          }
+        ]
+      },
+
+      {
+        clusterId: 4,
+        schools: [
+          {
+            name: "Zomba LEA",
+            lat: -15.39,
+            lng: 35.31
+          },
+          {
+            name: "Domasi Primary",
+            lat: -15.30,
+            lng: 35.28
+          }
+        ]
+      }
+    ];
+    function MapsPage({ setPage, user, focus }) {
+
+      const [selectedRegion, setSelectedRegion] =
+        React.useState("All");
+
+      const [selectedCluster, setSelectedCluster] =
+        React.useState(null);
+
+      const [showLegend, setShowLegend] =
+        React.useState(true);
+
+      const mapRef = React.useRef(null);
+
+      const regions = [
+        "All",
+        "Northern",
+        "Central",
+        "Southern"
+      ];
+
+      const clustersWithCoords = CLUSTERS.map(c => {
+
+        const district =
+          DISTRICTS.find(
+            d => d.name === c.district
+          );
+
+        return {
+          ...c,
+          region: district?.r || "Central",
+          lat:
+            DISTRICT_INFO[c.district]?.lat || -13.5,
+          lng:
+            DISTRICT_INFO[c.district]?.lng || 34
+        };
+
+      });
+
+      const filteredClusters =
+        selectedRegion === "All"
+          ? clustersWithCoords
+          : clustersWithCoords.filter(
+            c => c.region === selectedRegion
+          );
+
+      const flyToCluster = cluster => {
+
+        if (!mapRef.current) return;
+
+        mapRef.current.flyTo(
+          [cluster.lat, cluster.lng],
+          9,
+          {
+            duration: 2
+          }
+        );
+
+      };
+
+      React.useEffect(() => {
+
+        if (!window.L) return;
+
+        const map = L.map("ett-map", {
+          zoomControl: true
+        }).setView([-13.5, 34], 6);
+
+        mapRef.current = map;
+
+        // CARTODB TILE LAYER
+        L.tileLayer(
+          "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+          {
+            attribution:
+              '&copy; OpenStreetMap contributors &copy; CARTO'
+          }
+        ).addTo(map);
+
+        // SCALE BAR
+        L.control
+          .scale({
+            imperial: false
+          })
+          .addTo(map);
+
+        // CLUSTER MARKERS
+        filteredClusters.forEach(cluster => {
+
+          const color =
+            cluster.progress >= 80
+              ? "#16a34a"
+              : cluster.progress >= 60
+                ? "#ea580c"
+                : "#dc2626";
+
+          const marker = L.circleMarker(
+            [cluster.lat, cluster.lng],
+            {
+              radius: 11,
+              fillColor: color,
+              color: "#fff",
+              weight: 2,
+              fillOpacity: 0.9
+            }
+          ).addTo(map);
+
+          marker.bindPopup(`
+        <div style="min-width:220px;font-family:Arial">
+          <h3 style="margin:0 0 6px;font-size:15px;">
+            ${cluster.name}
+          </h3>
+
+          <div style="font-size:12px;color:#555;margin-bottom:8px;">
+            ${cluster.district} District
+          </div>
+
+          <div style="margin-bottom:6px;">
+            <b>Schools:</b> ${cluster.schools}
+          </div>
+
+          <div style="margin-bottom:6px;">
+            <b>Students:</b> ${cluster.students}
+          </div>
+
+          <div style="margin-bottom:10px;">
+            <b>Progress:</b> ${cluster.progress}%
+          </div>
+
+          <button
+            onclick="window.openClusterModal(${cluster.id})"
+            style="
+              width:100%;
+              border:none;
+              background:#ea6c0a;
+              color:white;
+              padding:8px;
+              border-radius:8px;
+              cursor:pointer;
+              font-weight:bold;
+            "
+          >
+            View Details
+          </button>
+        </div>
+      `);
+
+          marker.on("click", () => {
+            flyToCluster(cluster);
+          });
+
+        });
+
+        // DISTRICT POINTS
+        DISTRICTS.forEach(district => {
+
+          const coords =
+            DISTRICT_INFO[district.name];
+
+          if (!coords) return;
+
+          L.circleMarker(
+            [coords.lat, coords.lng],
+            {
+              radius: 5,
+              fillColor: "#111827",
+              color: "#fff",
+              weight: 1,
+              fillOpacity: 0.9
+            }
+          )
+            .addTo(map)
+            .bindTooltip(district.name);
+
+        });
+
+        // SCHOOL MARKERS + LINES
+        CLUSTER_SCHOOLS.forEach(clusterGroup => {
+
+          const cluster =
+            clustersWithCoords.find(
+              c => c.id === clusterGroup.clusterId
+            );
+
+          if (!cluster) return;
+
+          const schoolPoints = [];
+
+          clusterGroup.schools.forEach(school => {
+
+            schoolPoints.push([
+              school.lat,
+              school.lng
+            ]);
+
+            // SCHOOL MARKER
+            L.circleMarker(
+              [school.lat, school.lng],
+              {
+                radius: 7,
+                fillColor: "#2563eb",
+                color: "#fff",
+                weight: 2,
+                fillOpacity: 1
+              }
+            )
+              .addTo(map)
+              .bindPopup(`
+            <div style="font-family:Arial">
+              <b>${school.name}</b><br/>
+              Cluster: ${cluster.name}
+            </div>
+          `);
+
+            // LINE TO CLUSTER
+            L.polyline(
+              [
+                [cluster.lat, cluster.lng],
+                [school.lat, school.lng]
+              ],
+              {
+                color: "#94a3b8",
+                weight: 2,
+                opacity: 0.7,
+                dashArray: "5,5"
+              }
+            ).addTo(map);
+
+          });
+
+          // CONNECT SCHOOLS
+          if (schoolPoints.length > 1) {
+
+            L.polyline(
+              schoolPoints,
+              {
+                color: "#2563eb",
+                weight: 3,
+                opacity: 0.5
+              }
+            ).addTo(map);
+
+          }
+
+        });
+
+        return () => {
+          map.remove();
+        };
+
+      }, [selectedRegion]);
+
+      window.openClusterModal = id => {
+
+        const cluster =
+          clustersWithCoords.find(
+            c => c.id === id
+          );
+
+        setSelectedCluster(cluster);
+
+      };
+
+      return (
+        <div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "320px 1fr",
+              gap: 14
+            }}
+            data-map-grid
+          >
+
+            {/* SIDEBAR */}
+            <div
+              style={{
+                background: "#fff",
+                borderRadius: 16,
+                border: "1px solid #eee",
+                padding: 16,
+                maxHeight: "82vh",
+                overflowY: "auto",
+                boxShadow:
+                  "0 10px 24px rgba(0,0,0,.06)"
+              }}
+            >
+
+              <h2
+                style={{
+                  marginTop: 0
+                }}
+              >
+                Malawi Clusters
+              </h2>
+
+              {/* REGION FILTER */}
+              <div
+                style={{
+                  display: "flex",
+                  gap: 6,
+                  flexWrap: "wrap",
+                  marginBottom: 18
+                }}
+              >
+                {regions.map(region => (
+
+                  <button
+                    key={region}
+                    onClick={() =>
+                      setSelectedRegion(region)
+                    }
+                    style={{
+                      border: "none",
+                      background:
+                        selectedRegion === region
+                          ? "#ea6c0a"
+                          : "#f3f4f6",
+                      color:
+                        selectedRegion === region
+                          ? "#fff"
+                          : "#111",
+                      padding: "8px 12px",
+                      borderRadius: 20,
+                      cursor: "pointer",
+                      fontWeight: 700
+                    }}
+                  >
+                    {region}
+                  </button>
+
+                ))}
+              </div>
+
+              {/* CLUSTERS */}
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 10
+                }}
+              >
+
+                {filteredClusters.map(cluster => (
+
+                  <div
+                    key={cluster.id}
+                    onClick={() => {
+                      flyToCluster(cluster);
+                      setSelectedCluster(cluster);
+                    }}
+                    style={{
+                      padding: 14,
+                      borderRadius: 12,
+                      border: "1px solid #eee",
+                      cursor: "pointer",
+                      background: "#fff"
+                    }}
+                  >
+
+                    <div
+                      style={{
+                        fontWeight: 700
+                      }}
+                    >
+                      {cluster.name}
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: "#666",
+                        marginTop: 4
+                      }}
+                    >
+                      {cluster.district}
+                    </div>
+
+                  </div>
+
+                ))}
+
+              </div>
+
+            </div>
+
+            {/* MAP */}
+            <div
+              style={{
+                position: "relative"
+              }}
+            >
+
+              <div
+                id="ett-map"
+                style={{
+                  width: "100%",
+                  height: "82vh",
+                  borderRadius: 18,
+                  overflow: "hidden"
+                }}
+              />
+
+              {/* LEGEND */}
+              <div
+                style={{
+                  position: "absolute",
+                  top: 14,
+                  right: 14,
+                  zIndex: 1000
+                }}
+              >
+
+                <button
+                  onClick={() =>
+                    setShowLegend(!showLegend)
+                  }
+                  style={{
+                    background: "#fff",
+                    border: "none",
+                    padding: "10px 14px",
+                    borderRadius: 10,
+                    fontWeight: 700,
+                    cursor: "pointer"
+                  }}
+                >
+                  Legend
+                </button>
+
+                {showLegend && (
+
+                  <div
+                    style={{
+                      marginTop: 10,
+                      background: "#fff",
+                      padding: 14,
+                      borderRadius: 12,
+                      width: 180
+                    }}
+                  >
+
+                    {[
+                      {
+                        color: "#16a34a",
+                        label: "High Progress"
+                      },
+                      {
+                        color: "#ea580c",
+                        label: "Medium Progress"
+                      },
+                      {
+                        color: "#dc2626",
+                        label: "Low Progress"
+                      }
+                    ].map(item => (
+
+                      <div
+                        key={item.label}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          marginBottom: 10
+                        }}
+                      >
+
+                        <div
+                          style={{
+                            width: 14,
+                            height: 14,
+                            borderRadius: "50%",
+                            background: item.color
+                          }}
+                        />
+
+                        <span>
+                          {item.label}
+                        </span>
+
+                      </div>
+
+                    ))}
+
+                  </div>
+
+                )}
+
+              </div>
+
+            </div>
+
+          </div>
+
+          {/* MODAL */}
+          {selectedCluster && (
+
+            <Modal
+              title={selectedCluster.name}
+              onClose={() =>
+                setSelectedCluster(null)
+              }
+              width={500}
+            >
+
+              <div
+                style={{
+                  display: "grid",
+                  gap: 16
+                }}
+              >
+
+                <div>
+                  <b>District:</b>{" "}
+                  {selectedCluster.district}
+                </div>
+
+                <div>
+                  <b>Schools:</b>{" "}
+                  {selectedCluster.schools}
+                </div>
+
+                <div>
+                  <b>Students:</b>{" "}
+                  {selectedCluster.students}
+                </div>
+
+                <div>
+                  <b>Progress:</b>{" "}
+                  {selectedCluster.progress}%
+                </div>
+
+              </div>
+
+            </Modal>
+
+          )}
+
+        </div>
+      );
+
+    }
+
+    // ─────────────────────────────────────────────
+    // CLUSTERS
+    // ─────────────────────────────────────────────
+    function ClustersPage({ user, onOpenMap, setPage }) {
+      const list = user.role === "tot" ? CLUSTERS.filter(c => c.id === user.clusterId) : user.role === "district_coordinator" ? CLUSTERS.filter(c => c.district === user.district) : CLUSTERS;
+      return (
+        <div>
+          <Kicker text={user.role === "tot" ? "My Assigned Cluster" : "Cluster Management"} />
+          <h1 style={{ margin: "0 0 6px", fontSize: 24, fontWeight: 800, color: BLACK }}>{user.role === "tot" ? "My School Cluster" : "School Clusters"}</h1>
+          <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "#6b7280" }}>Select a cluster to view its location on the live Malawi map.</p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(135px,1fr))", gap: 9, marginBottom: 16 }}>
+            <StatCard icon="🏫" label="Clusters" value={127} /><StatCard icon="🏛️" label="Schools" value={378} /><StatCard icon="👨‍🎓" label="Students" value="7,620" /><StatCard icon="📈" label="Avg Progress" value="69%" />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(245px,1fr))", gap: 9 }}>
+            {list.map(c => (
+              <Card key={c.id} style={{ borderLeft: `4px solid ${OR}`, cursor: "pointer", transition: "transform .15s,box-shadow .15s" }} onClick={() => onOpenMap({ type: "cluster", id: c.id, name: c.name, ts: Date.now() })} onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-3px)"; e.currentTarget.style.boxShadow = "0 18px 36px rgba(59,38,33,.14)"; }} onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = "0 6px 20px rgba(17,17,17,.04)"; }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
+                  <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 2, color: BLACK }}>{c.name}</div>
+                  <Badge text={user.role === "tot" ? "Assigned" : "Map"} color={OR_D} bg={OR_PALE} />
+                </div>
+                <div style={{ fontSize: 11.5, color: "#6b7280", marginBottom: 9 }}>📍 {c.district} · Lead: {c.lead}</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 5, marginBottom: 9 }}>
+                  {[["Schools", c.schools], ["Students", c.students.toLocaleString()], ["Trained", c.trained]].map(([l, v]) => (
+                    <div key={l} style={{ textAlign: "center", background: "#fafaf9", borderRadius: 6, padding: "5px 4px" }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: OR }}>{v}</div>
+                      <div style={{ fontSize: 9.5, color: "#9ca3af" }}>{l}</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#6b7280", marginBottom: 3 }}>
+                  <span>Progress</span><span style={{ fontWeight: 700, color: OR }}>{c.progress}%</span>
+                </div>
+                <ProgBar pct={c.progress} />
+                {user.role === "tot" && <Btn size="sm" style={{ marginTop: 10 }} onClick={(e) => { e.stopPropagation(); setPage("submit"); }}>Submit Cluster Report</Btn>}
+              </Card>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // ─────────────────────────────────────────────
+    // DISTRICTS
+    // ─────────────────────────────────────────────
+    function DistrictsPage({ user, onOpenMap }) {
+      const [region, setRegion] = useState("all");
+      const filtered = DISTRICTS.filter(d => (region === "all" || d.r === region) && (!(user?.role === "tot") || d.name === user.district));
+      return (
+        <div>
+          <Kicker text="All 28 Districts" />
+          <h1 style={{ margin: "0 0 6px", fontSize: 24, fontWeight: 800, color: BLACK }}>{user?.role === "tot" ? "My District" : "Implementing Districts"}</h1>
+          <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "#6b7280" }}>Select a district to open it on the live Malawi map.</p>
+          <FilterBar options={["all", "Northern", "Central", "Southern"].map(r => ({ v: r, l: r === "all" ? "All Regions" : r }))} active={region} onChange={setRegion} />
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: 9 }}>
+            {filtered.map(d => {
+              const pct = d.schools ? Math.round(d.cov / d.schools * 100) : 0;
+              const col = d.s === "Active" ? OR_D : d.s === "Completed" ? "#065f46" : "#6b7280";
+              const bg = d.s === "Active" ? OR_PALE : d.s === "Completed" ? "#d1fae5" : "#f3f4f6";
+              return (
+                <Card key={d.name} style={{ cursor: "pointer", transition: "transform .13s,box-shadow .13s", borderLeft: `4px solid ${col}` }} onClick={() => onOpenMap({ type: "district", name: d.name, ts: Date.now() })} onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-3px)"; e.currentTarget.style.boxShadow = `0 18px 36px rgba(59,38,33,.14)`; }} onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = "0 6px 20px rgba(17,17,17,.04)"; }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 5 }}>
+                    <div><div style={{ fontWeight: 700, fontSize: 13, color: OR }}>{d.name}</div><div style={{ fontSize: 10, color: "#9ca3af" }}>{d.r}</div></div>
+                    <Badge text={d.s} color={col} bg={bg} />
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, marginBottom: 7 }}>
+                    {[["TOTs", d.tots], ["Schools", d.schools]].map(([l, v]) => (
+                      <div key={l} style={{ textAlign: "center", background: "#fafaf9", borderRadius: 5, padding: "5px 3px" }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: OR }}>{v}</div>
+                        <div style={{ fontSize: 9.5, color: "#9ca3af" }}>{l}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#6b7280", marginBottom: 3 }}><span>Coverage</span><span style={{ fontWeight: 700 }}>{d.cov}/{d.schools} ({pct}%)</span></div>
+                  <ProgBar pct={pct} />
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    // ─────────────────────────────────────────────
+    // TRAININGS
+    // ─────────────────────────────────────────────
+    const TRAININGS = [
+      { name: "ETT Cohort 12 — Lilongwe Urban", loc: "Lilongwe", venue: "Lilongwe Teachers College", trainers: "Grace Kamwendo, Peter Banda", dates: "28 Apr — 3 May 2026", pax: 32, day: 4, s: "active" },
+      { name: "ETT Cohort 13 — Blantyre South", loc: "Blantyre", venue: "Soche Community Centre", trainers: "Mary Chirwa, James Phiri", dates: "29 Apr — 4 May 2026", pax: 28, day: 3, s: "active" },
+      { name: "ETT Cohort 14 — Mzimba North", loc: "Mzimba", venue: "Mzimba District Education Office", trainers: "Agnes Nyirenda, Joseph Mhango", dates: "5 May — 10 May 2026", pax: 25, day: null, s: "upcoming" },
+      { name: "ETT Cohort 15 — Zomba Rural", loc: "Zomba", venue: "Zomba Rural District Hall", trainers: "Esther Mzumara, David Mkandawire", dates: "12 May — 17 May 2026", pax: 30, day: null, s: "upcoming" },
+      { name: "ETT Cohort 11 — Karonga", loc: "Karonga", venue: "Karonga CDSS", trainers: "Grace Kamwendo, Fatsani Ngoma", dates: "14 Apr — 19 Apr 2026", pax: 26, day: 6, s: "completed" },
+      { name: "ETT Cohort 10 — Mangochi", loc: "Mangochi", venue: "Mangochi Teachers Centre", trainers: "Mary Chirwa, Peter Banda", dates: "7 Apr — 12 Apr 2026", pax: 34, day: 6, s: "completed" },
+    ];
+    function TrainingsPage() {
+      const [filt, setFilt] = useState("all");
+      const pm = { active: { c: OR_D, bg: OR_PALE }, upcoming: { c: "#92400e", bg: "#fef9c3" }, completed: { c: "#6b7280", bg: "#f3f4f6" } };
+      const visible = filt === "all" ? TRAININGS : TRAININGS.filter(t => t.s === filt);
+      return (
+        <div>
+          <Kicker text="Training Management" />
+          <h1 style={{ margin: "0 0 13px", fontSize: 21, fontWeight: 700 }}>Current Trainings</h1>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 9, marginBottom: 14 }}>
+            <StatCard icon="▶️" label="In Progress" value={2} /><StatCard icon="⏰" label="Upcoming" value={2} /><StatCard icon="✅" label="Completed" value={2} color="#15803d" />
+          </div>
+          <FilterBar options={["all", "active", "upcoming", "completed"].map(x => ({ v: x, l: x.charAt(0).toUpperCase() + x.slice(1) }))} active={filt} onChange={setFilt} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+            {visible.map(t => {
+              const pct = t.s === "completed" ? 100 : t.s === "upcoming" ? 0 : Math.round((t.day / 6) * 100);
+              const m = pm[t.s];
+              return (
+                <Card key={t.name}>
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 9 }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 2 }}>{t.name}</div>
+                      <div style={{ fontSize: 11, color: "#9ca3af", display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        <span>📍 {t.loc} · {t.dates}</span><span>👤 {t.pax} participants</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>🏛️ {t.venue} · 👩‍🏫 {t.trainers}</div>
+                    </div>
+                    <Badge text={t.s === "active" ? "In Progress" : t.s.charAt(0).toUpperCase() + t.s.slice(1)} color={m.c} bg={m.bg} />
+                  </div>
+                  {t.s !== "upcoming" && (
+                    <>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#9ca3af", marginBottom: 3 }}>
+                        <span>{t.s === "completed" ? "Complete" : "Day " + t.day + " of 6"}</span><span>{pct}%</span>
+                      </div>
+                      <ProgBar pct={pct} />
+                      <div style={{ display: "flex", gap: 4, marginTop: 7 }}>
+                        {Array.from({ length: 6 }, (_, i) => {
+                          const n = i + 1;
+                          const cls = t.s === "completed" ? "done" : n < t.day ? "done" : n === t.day ? "today" : "";
+                          const bg = cls === "done" ? OR : cls === "today" ? OR_D : "#f1f5f9";
+                          const color = cls ? "#fff" : "#9ca3af";
+                          return <div key={n} style={{ width: 22, height: 22, borderRadius: "50%", background: bg, color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, border: `2px solid ${cls ? bg : "#e5e7eb"}` }}>{n}</div>;
+                        })}
+                      </div>
+                    </>
+                  )}
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    // ─────────────────────────────────────────────
+    // ETT TRAINING PAGE
+    // ─────────────────────────────────────────────
+    function ETTPage() {
+      return (
+        <div>
+          <Kicker text="Program Overview" />
+          <h1 style={{ margin: "0 0 4px", fontSize: 21, fontWeight: 700 }}>Empowerment Transformation Training</h1>
+          <p style={{ margin: "0 0 14px", color: "#6b7280", fontSize: 13 }}>A 6-day teacher training program by Ujamaa Pamodzi Africa fighting SGBV through education.</p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(190px,1fr))", gap: 9, marginBottom: 16 }}>
+            {[["🛡️", "Prevent SGBV", "Equip students to recognize and prevent sexual and gender-based violence"], ["👩‍🏫", "Empower Teachers", "Train educators to deliver age-appropriate SGBV prevention in schools"], ["⚖️", "Promote Equality", "Challenge harmful gender norms and stereotypes in schools"], ["🏡", "Safe Spaces", "Create supportive environments where all students can thrive"], ["🤝", "Community", "Connect schools through cluster-based implementation"], ["✨", "Transformation", "Foster lasting behavioral change through education"]].map(([i, t, d]) => (
+              <Card key={t}><div style={{ fontSize: 22, marginBottom: 7 }}>{i}</div><div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 3 }}>{t}</div><div style={{ fontSize: 11, color: "#6b7280", lineHeight: 1.5 }}>{d}</div></Card>
+            ))}
+          </div>
+          <Card>
+            <SH title="6-Day Training Curriculum" />
+            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+              {[["1", "Foundations of SGBV Awareness", "Definitions, types, root causes. Gender norms. Malawi's Gender Equality Act."], ["2", "Empowerment Through Education", "Practical strategies teachers apply immediately in classrooms."], ["3", "Identifying & Responding to SGBV", "Identify cases and respond through established referral pathways."], ["4", "Teaching the ETT Curriculum", "Deliver ETT content through interactive, age-appropriate methods."], ["5", "Community Engagement & Cluster Formation", "Form school clusters and engage communities as partners."], ["6", "Implementation Planning & Graduation", "Complete plans and officially launch school clusters."]].map(([n, t, d]) => (
+                <div key={n} style={{ display: "flex", gap: 11, padding: "10px", borderRadius: 9, border: "1px solid #e5e7eb" }}>
+                  <div style={{ width: 28, height: 28, borderRadius: "50%", background: OR, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 13, flexShrink: 0 }}>{n}</div>
+                  <div><div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 2 }}>{t}</div><div style={{ fontSize: 11.5, color: "#6b7280" }}>{d}</div></div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+      );
+    }
+
+    // ─────────────────────────────────────────────
+    // CURRICULUM (HIM + GESD from PDFs)
+    // ─────────────────────────────────────────────
+    function CurriculumPage() {
+      const [tab, setTab] = useState("him");
+      const [sel, setSel] = useState(null);
+      const sessions = tab === "him" ? HIM_SESSIONS : GESD_SESSIONS;
+      const ac = tab === "him" ? "#2563a8" : "#a82563";
+      const abg = tab === "him" ? "#e8f0fb" : "#fbe8f0";
+      const hbg = tab === "him" ? "#1a3a5c" : "#5c1a3a";
+
+      return (
+        <div>
+          <Kicker text="Digital Curriculum Panel" />
+          <h1 style={{ margin: "0 0 4px", fontSize: 21, fontWeight: 700 }}>Student Curriculum</h1>
+          <p style={{ margin: "0 0 14px", color: "#6b7280", fontSize: 13 }}>Click any session to explore content and objectives.</p>
+          <div style={{ display: "flex", borderBottom: "2px solid #e5e7eb", marginBottom: 16 }}>
+            {[["him", "🦸 Hero in Me (HIM) — Boys"], ["gesd", "👧 GESD — Girls"]].map(([k, l]) => (
+              <button key={k} onClick={() => setTab(k)} style={{ padding: "9px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer", color: tab === k ? ac : "#9ca3af", background: "none", border: "none", borderBottom: `3px solid ${tab === k ? ac : "transparent"}`, marginBottom: -2, transition: "all .13s" }}>{l}</button>
+            ))}
+          </div>
+          <div style={{ background: hbg, borderRadius: 10, padding: "18px 22px", color: "#fff", marginBottom: 14 }}>
+            <h2 style={{ margin: "0 0 3px", fontSize: 18, fontWeight: 700 }}>{tab === "him" ? "Hero in Me (HIM)" : "GESD — Girls Empowerment & Safety"}</h2>
+            <p style={{ margin: "0 0 10px", opacity: .6, fontSize: 12 }}>{tab === "him" ? "Boys' Empowerment & SGBV Prevention · 6 Topics" : "Girls' Empowerment & SGBV Prevention · 6 Sessions"}</p>
+            <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+              {(tab === "him" ? ["👦 Boys", "6 Topics", "Peer Leadership", "Care·Safety·Growth·Confidence"] : ["👧 Girls", "6 Sessions", "Safe Space Learning", "SMEVB Framework"]).map(b => (
+                <span key={b} style={{ background: "rgba(255,255,255,.14)", border: "1px solid rgba(255,255,255,.18)", borderRadius: 20, padding: "3px 9px", fontSize: 10.5, fontWeight: 700 }}>{b}</span>
+              ))}
+            </div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(238px,1fr))", gap: 9 }}>
+            {sessions.map((s, i) => (
+              <div key={i} onClick={() => setSel(s)} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden", cursor: "pointer", transition: "transform .13s,box-shadow .13s" }} onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 4px 14px rgba(0,0,0,.08)"; }} onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = ""; }}>
+                <div style={{ height: 4, background: hbg }} />
+                <div style={{ padding: 13 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: .8, color: ac, marginBottom: 3 }}>{s.num}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 5 }}>{s.title}</div>
+                  <div style={{ fontSize: 11, color: "#6b7280", lineHeight: 1.5, marginBottom: 9 }}>{s.desc.substring(0, 95)}…</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 7, borderTop: "1px solid #f3f4f6" }}>
+                    <span style={{ fontSize: 10, color: "#9ca3af" }}>⏱ {s.dur}</span>
+                    <span style={{ padding: "2px 8px", borderRadius: 5, fontSize: 10, fontWeight: 700, background: abg, color: ac }}>View →</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          {sel && (
+            <Modal title={`${sel.num}: ${sel.title}`} onClose={() => setSel(null)}>
+              <div style={{ background: abg, color: ac, fontStyle: "italic", fontWeight: 700, fontSize: 13, padding: "8px 12px", borderRadius: 7, marginBottom: 11 }}>{sel.desc}</div>
+              <div style={{ background: abg, color: ac, padding: "6px 11px", borderRadius: 7, fontSize: 12, fontWeight: 700, marginBottom: 11 }}>⏱ Duration: {sel.dur}</div>
+              {sel.pledge && (
+                <div style={{ marginBottom: 11 }}>
+                  <div style={{ fontSize: 10.5, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: .7, marginBottom: 5 }}>🗣️ Shout-Out / Pledge</div>
+                  <div style={{ background: "#f9fafb", borderLeft: `3px solid ${ac}`, borderRadius: "0 7px 7px 0", padding: "9px 12px", fontSize: 12, lineHeight: 1.9, color: "#374151", fontStyle: "italic" }}>
+                    {sel.pledge.split("/").map((l, i) => <div key={i}>{l.trim()}</div>)}
+                  </div>
+                </div>
+              )}
+              <div>
+                <div style={{ fontSize: 10.5, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: .7, marginBottom: 5 }}>Learning Objectives</div>
+                <ul style={{ paddingLeft: 16, margin: 0 }}>
+                  {sel.objectives.map((o, i) => <li key={i} style={{ fontSize: 12, color: "#374151", lineHeight: 1.8 }}>{o}</li>)}
+                </ul>
+              </div>
+            </Modal>
+          )}
+        </div>
+      );
+    }
+
+    // ─────────────────────────────────────────────
+    // ANALYTICS
+    // ─────────────────────────────────────────────
+    function AnalyticsPage({ reports }) {
+      const byStatus = { approved: 0, pending: 0, rejected: 0 };
+      const byCurr = { HIM: 0, GESD: 0, Combined: 0 };
+      const byDist = {};
+      const { ClipboardList, Users, User, GraduationCap } = lucide;
+      let boys = 0, girls = 0;
+      reports.forEach(r => { byStatus[r.status] = (byStatus[r.status] || 0) + 1; byCurr[r.curriculum] = (byCurr[r.curriculum] || 0) + 1; byDist[r.district] = (byDist[r.district] || 0) + 1; boys += r.boys; girls += r.girls; });
+      const Bar = ({ label, value, max, color = OR }) => (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}><span style={{ fontWeight: 600 }}>{label}</span><span style={{ color: OR, fontWeight: 700 }}>{value}</span></div>
+          <ProgBar pct={max ? Math.round(value / max * 100) : 0} color={color} />
+        </div>
+      );
+      return (
+        <div>
+          <Kicker text="Analytics" />
+          <h1 style={{ margin: "0 0 13px", fontSize: 21, fontWeight: 700 }}>Program Analytics</h1>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(135px,1fr))", gap: 9, marginBottom: 16 }}>
+            <StatCard icon={<ClipboardList size={20} />} label="Total Reports" value={reports.length} /> <StatCard icon={<User size={20} />} label="Boys Reached" value={boys} color="#1e40af" /> <StatCard icon={<User size={20} />} label="Girls Reached" value={girls} color="#a82563" /> <StatCard icon={<GraduationCap size={20} />} label="Total Students" value={boys + girls} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <Card><SH title="Report Status" />{Object.entries(byStatus).map(([k, v]) => <Bar key={k} label={k.charAt(0).toUpperCase() + k.slice(1)} value={v} max={reports.length} color={k === "approved" ? "#15803d" : k === "rejected" ? "#dc2626" : OR} />)}</Card>
+            <Card><SH title="By Curriculum" />{Object.entries(byCurr).map(([k, v]) => <Bar key={k} label={k} value={v} max={reports.length} />)}</Card>
+            <Card><SH title="By District" />{Object.entries(byDist).map(([k, v]) => <Bar key={k} label={k} value={v} max={Math.max(...Object.values(byDist))} />)}</Card>
+          </div>
+          <Card>
+            <SH title="Regional Summary" />
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <TH cols={["Region", "Districts", "TOTs", "Schools", "Clusters", "Coverage"]} />
+              <tbody>
+                {[["Northern", "6/6", "249", "83", "28", "70%"], ["Central", "6/9", "384", "128", "44", "61%"], ["Southern", "10/13", "501", "167", "55", "73%"]].map(([r, ...v]) => (
+                  <tr key={r} style={{ borderBottom: "1px solid #f3f4f6" }}><td style={{ padding: "7px 9px", fontWeight: 700 }}>{r}</td>{v.map((x, i) => <td key={i} style={{ padding: "7px 9px", color: "#374151" }}>{x}</td>)}</tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        </div>
+      );
+    }
+
+    // ─────────────────────────────────────────────
+    // USER MANAGEMENT
+    // ─────────────────────────────────────────────
+    function UsersPage({ user: cu, showToast }) {
+      const [users, setUsers] = useState(USERS_INIT.map(u => ({ ...u })));
+      const [showAdd, setShowAdd] = useState(false);
+      const [filt, setFilt] = useState("all");
+      const [search, setSearch] = useState("");
+      const [nf, setNf] = useState({ first: "", last: "", email: "", role: "data_entry", district: "" });
+      const sn = k => e => setNf(p => ({ ...p, [k]: e.target.value }));
+      if (!can(cu.role, "manageUsers")) return <div style={{ padding: 48, textAlign: "center", color: "#9ca3af" }}>🔒 Access denied. National Admin only.</div>;
+      const visible = users.filter(u => { if (filt !== "all" && u.role !== filt) return false; const q = search.toLowerCase(); if (q && !u.name.toLowerCase().includes(q) && !u.email.toLowerCase().includes(q)) return false; return true; });
+      const addUser = () => {
+        if (!nf.first || !nf.last || !nf.email) { showToast("⚠️ Fill in name and email"); return; }
+        setUsers(p => [{ id: Date.now().toString(), email: nf.email, password: "temp123", role: nf.role, name: `${nf.first} ${nf.last}`, district: nf.district || null, avatar: (nf.first[0] + nf.last[0]).toUpperCase(), status: "pending" }, ...p]);
+        setShowAdd(false); setNf({ first: "", last: "", email: "", role: "data_entry", district: "" });
+        showToast(`✅ ${nf.first} ${nf.last} added — pending activation`);
+      };
+      const cols = ["#ea6c0a", "#2563a8", "#15803d", "#7c3aed", "#dc2626", "#0891b2"];
+      return (
+        <div>
+          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 16 }}>
+            <div><Kicker text="Admin" /><h1 style={{ margin: 0, fontSize: 21, fontWeight: 700 }}>User Management</h1></div>
+            <Btn onClick={() => setShowAdd(true)}>➕ Add User</Btn>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 9, marginBottom: 14 }}>
+            <StatCard icon="👥" label="Total Users" value={users.length} /><StatCard icon="✅" label="Active" value={users.filter(u => u.status === "active").length} color="#15803d" /><StatCard icon="⏳" label="Pending" value={users.filter(u => u.status === "pending").length} color="#f59e0b" /><StatCard icon="📍" label="Districts" value={[...new Set(users.filter(u => u.district).map(u => u.district))].length} />
+          </div>
+          <Card>
+            <FilterBar
+              options={["all", "admin", "tot", "data_entry", "district_coordinator", "viewer"].map(x => ({ v: x, l: x === "all" ? "All" : (ROLE_CFG[x]?.label || x) + " (" + (x === "all" ? users : users.filter(u => u.role === x)).length + ")" }))}
+              active={filt} onChange={setFilt} search={search} onSearch={setSearch} searchPlaceholder="Search users…"
+            />
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                <TH cols={["User", "Role", "District", "Status", "Actions"]} />
+                <tbody>
+                  {visible.map((u, i) => {
+                    const rc = ROLE_CFG[u.role];
+                    return (
+                      <tr key={u.id} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                        <td style={{ padding: "8px 9px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <div style={{ width: 28, height: 28, borderRadius: "50%", background: cols[i % cols.length], color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, flexShrink: 0 }}>{u.avatar}</div>
+                            <div><div style={{ fontWeight: 700, fontSize: 12 }}>{u.name}</div><div style={{ fontSize: 10.5, color: "#9ca3af" }}>{u.email}</div></div>
+                          </div>
+                        </td>
+                        <td style={{ padding: "8px 9px" }}><Badge text={rc?.label || u.role} color={rc?.color || "#6b7280"} bg={rc?.bg || "#f3f4f6"} /></td>
+                        <td style={{ padding: "8px 9px", fontSize: 12, color: "#6b7280" }}>{u.district || "—"}</td>
+                        <td style={{ padding: "8px 9px" }}>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12 }}>
+                            <span style={{ width: 7, height: 7, borderRadius: "50%", background: u.status === "active" ? "#22c55e" : u.status === "pending" ? "#f59e0b" : "#d1d5db", display: "inline-block" }} />
+                            {u.status.charAt(0).toUpperCase() + u.status.slice(1)}
+                          </span>
+                        </td>
+                        <td style={{ padding: "8px 9px" }}>
+                          <div style={{ display: "flex", gap: 4 }}>
+                            {u.status === "pending" && <Btn size="sm" variant="success" onClick={() => { setUsers(p => p.map(x => x.id === u.id ? { ...x, status: "active" } : x)); showToast("User activated!"); }}>Activate</Btn>}
+                            {u.status === "active" && u.id !== cu.id && <Btn size="sm" variant="danger" onClick={() => { setUsers(p => p.map(x => x.id === u.id ? { ...x, status: "inactive" } : x)); showToast("User deactivated."); }}>Deactivate</Btn>}
+                            <Btn size="sm" variant="ghost" onClick={() => showToast(`Editing ${u.name}…`)}>Edit</Btn>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {visible.length === 0 && <tr><td colSpan={5} style={{ padding: 20, textAlign: "center", color: "#9ca3af" }}>No users found</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+          {showAdd && (
+            <Modal title="Add New User" onClose={() => setShowAdd(false)}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9 }}>
+                <FInput label="First Name *" placeholder="Grace" value={nf.first} onChange={sn("first")} />
+                <FInput label="Last Name *" placeholder="Kamwendo" value={nf.last} onChange={sn("last")} />
+              </div>
+              <FInput label="Email Address *" type="email" placeholder="grace@ujamaa.mw" value={nf.email} onChange={sn("email")} />
+              <FSelect label="Role *" value={nf.role} onChange={sn("role")}>
+                <option value="tot">Trainer of Trainers</option>
+                <option value="data_entry">Data Entry Officer</option>
+                <option value="district_coordinator">District Coordinator</option>
+                <option value="viewer">Viewer</option>
+                <option value="admin">National Admin</option>
+              </FSelect>
+              <FSelect label="District" value={nf.district} onChange={sn("district")}>
+                <option value="">None (National)</option>
+                {DISTRICT_LIST.map(d => <option key={d}>{d}</option>)}
+              </FSelect>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Btn onClick={addUser}>Add User</Btn>
+                <Btn variant="secondary" onClick={() => setShowAdd(false)}>Cancel</Btn>
+              </div>
+            </Modal>
+          )}
+        </div>
+      );
+    }
+
+    // ========================
+    // IMPACT STORIES COMPONENT (Public Sidebar)
+    // ========================
+    function ImpactPage({ reports, showToast, user }) {
+      const [expanded, setExpanded] = useState(null);
+      const [showForm, setShowForm] = useState(false);
+      const [storyForm, setStoryForm] = useState({ name: "", district: "", role: "", story: "" });
+      const [submitted, setSubmitted] = useState(false);
+
+      const STORIES = [
+        { id: 1, emoji: "👧", color: "#fdf2f8", border: "#f0a0cc", accent: "#a82563", title: "Breaking the Silence in Mzimba", quote: "I learned that my voice is my power.", who: "Chifundo, 14 — Student", district: "Mzimba District", date: "April 2026", curriculum: "GESD", full: "Chifundo had been silent about abuse for over a year. After completing the GESD program's Session 3 on Awareness and learning to trust her inner voice, she finally reported to a trusted teacher. The school cluster intervened swiftly through the referral pathway, connecting her to VSU support and counselling. She is now back in class, thriving, and has become a peer mentor for younger girls in her cluster." },
+        { id: 2, emoji: "👦", color: "#eff6ff", border: "#93c5fd", accent: "#1e40af", title: "A Hero Emerges in Lilongwe", quote: "Being a hero means helping someone in need.", who: "John, 13 — Student", district: "Lilongwe Central Cluster", date: "March 2026", curriculum: "HIM", full: "John witnessed a younger student being harassed on the school grounds. Using the 'Step-Up Strategies' from HIM Topic 4 — the Direct, Distract, Delegate method — he calmly distracted the aggressor and walked the victim safely to a teacher. His cluster lead nominated him as a 'Hero in Me' champion for the term. John now leads weekly discussions with boys in his class." },
+        { id: 3, emoji: "👩‍🏫", color: "#f0fdf4", border: "#86efac", accent: "#15803d", title: "Teacher Training Transforms a School", quote: "Our school now has a referral pathway that actually works.", who: "Mr. Mkandawire — Head Teacher, Kawale Primary", district: "Lilongwe District", date: "February 2026", curriculum: "ETT", full: "After 12 teachers completed the 6-day ETT program, Kawale Primary formed a Child Protection Committee and established a formal referral pathway with local police, VSU, and social welfare. Within three months, reporting of SGBV incidents increased by 70% — not because more incidents occurred, but because students and teachers finally trusted the system enough to speak up. The school has since been adopted as a model cluster for the region." },
+        { id: 4, emoji: "🌟", color: "#fff7ed", border: "#fdba74", accent: "#c25808", title: "Girls Lead the Way in Blantyre", quote: "We are not victims — we are leaders.", who: "Grace, 15 — GESD Graduate & Peer Mentor", district: "Blantyre South Cluster", date: "January 2026", curriculum: "GESD", full: "After completing all six GESD sessions, Grace started a weekly girls' safety club at her school with support from her TOT. Within two months, 35 girls were meeting regularly to discuss personal boundaries, self-defence techniques from Session 5, and how to safely report concerns. Three girls in the group have since accessed referral support through the school's cluster lead." },
+        { id: 5, emoji: "🤝", color: "#f5f3ff", border: "#c4b5fd", accent: "#7c3aed", title: "Boys & Girls Build a Safety Charter Together", quote: "We signed it together — it belongs to all of us.", who: "Combined Class — Karonga Primary", district: "Karonga Lakeshore Cluster", date: "March 2026", curriculum: "Combined", full: "The combined Session 6 brought boys from the HIM program and girls from GESD together for the first time. After sharing what they had learned, students co-wrote a School Safety Charter committing to respect, non-violence, and mutual support. The charter is now displayed at the school entrance. Teachers report a measurable shift in how boys and girls interact on the playground and in class." },
+        { id: 6, emoji: "📣", color: "#fef2f2", border: "#fca5a5", accent: "#991b1b", title: "Community Father Changes His Stance", quote: "I used to think this was not men's business. Now I know it is.", who: "Samuel Phiri — Community Father & Parent", district: "Dedza Highland Cluster", date: "February 2026", curriculum: "Community Engagement", full: "When the ETT cluster in Dedza held a community parent session, Samuel attended reluctantly. By the end, he had signed up to be a community champion. He now attends cluster meetings and speaks openly with other fathers about supporting their daughters' education and safety. His daughter is enrolled in GESD and says her father 'finally understands what we go through.'" },
+      ];
+
+      const MILESTONES = [
+        { year: "2019", event: "ETT program launched in Lilongwe with first cohort of 45 TOTs" },
+        { year: "2020", event: "Expanded to Southern Region — Blantyre and Zomba districts" },
+        { year: "2021", event: "1,000th student reached across 3 regions" },
+        { year: "2022", event: "First national training conference — 200 TOTs from 10 districts" },
+        { year: "2023", event: "Digital curriculum and cluster reporting system introduced" },
+        { year: "2024", event: "500+ TOTs trained; 19 districts active; government partnership signed" },
+        { year: "2025", event: "7,620+ students reached; 127 clusters operational nationwide" },
+        { year: "2026", event: "Targeting 28 districts and 15,000 students by year end" },
+      ];
+
+      const PRESS = [
+        { outlet: "Nation Online Malawi", headline: "ETT Program recognised as model SGBV intervention", date: "Mar 2026" },
+        { outlet: "UNICEF Malawi", headline: "Community-led safety training making strides in schools", date: "Jan 2026" },
+        { outlet: "Ministry of Education", headline: "ETT clusters adopted in national school safety framework", date: "Nov 2025" },
+      ];
+
+      const submitStory = () => {
+        if (!storyForm.name || !storyForm.story) { showToast("Please fill in your name and story"); return; }
+        setSubmitted(true);
+        showToast("✅ Thank you — your story has been received safely.");
+      };
+
+      return (
+        // ✅ CENTERED WRAPPER — matches SubmitReport pattern
+        <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+
+          {/* HERO BANNER */}
+          <div style={{ background: "linear-gradient(135deg,#1c1008 0%,#3B2621 100%)", borderRadius: 20, padding: "36px 28px", color: "#fff", marginBottom: 24, position: "relative", overflow: "hidden" }}>
+            <div style={{ position: "absolute", top: -40, right: -40, width: 200, height: 200, borderRadius: "50%", background: "rgba(234,108,10,.15)" }} />
+            <div style={{ position: "relative" }}>
+              <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1.4, textTransform: "uppercase", color: OR, marginBottom: 8 }}>Real Stories · Real Change</div>
+              <h1 style={{ margin: "0 0 10px", fontSize: "clamp(1.6rem,4vw,2.4rem)", fontWeight: 800, lineHeight: 1.1 }}>Impact Stories</h1>
+              <p style={{ margin: "0 0 22px", fontSize: 13.5, opacity: .75, maxWidth: 500, lineHeight: 1.6 }}>Every number in our data represents a real young person. These are their stories — and the stories of the teachers and communities who stood beside them.</p>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                {[["51,600+", "Learners Reached"], ["500+", "TOTs Trained"], ["127", "School Clusters"], ["22", "Active Districts"]].map(([v, l]) => (
+                  <div key={l} style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.15)", borderRadius: 10, padding: "10px 16px", textAlign: "center", minWidth: 90 }}>
+                    <div style={{ fontSize: 20, fontWeight: 800, color: OR }}>{v}</div>
+                    <div style={{ fontSize: 9.5, opacity: .6, marginTop: 2, textTransform: "uppercase", letterSpacing: .8 }}>{l}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* STORY CARDS HEADER */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.3, textTransform: "uppercase", color: OR, marginBottom: 3 }}>Voices from the Field</div>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#111" }}>Stories of Change</h2>
+            </div>
+            <button onClick={() => setShowForm(true)} style={{ background: OR, color: "#fff", border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+              📢 Share Your Story
+            </button>
+          </div>
+
+          {/* STORY CARDS GRID */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(290px,1fr))", gap: 14, marginBottom: 24 }}>
+            {STORIES.map(s => (
+              <div key={s.id} style={{ background: s.color, border: `1px solid ${s.border}`, borderRadius: 16, overflow: "hidden", transition: "transform .15s,box-shadow .15s" }}
+                onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-3px)"; e.currentTarget.style.boxShadow = "0 12px 28px rgba(0,0,0,.1)"; }}
+                onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = ""; }}>
+                <div style={{ padding: "18px 16px 14px" }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 10 }}>
+                    <div style={{ width: 44, height: 44, borderRadius: 12, background: "rgba(255,255,255,.7)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>{s.emoji}</div>
+                    <span style={{ padding: "3px 9px", borderRadius: 20, fontSize: 9.5, fontWeight: 700, background: "rgba(255,255,255,.7)", color: s.accent }}>{s.curriculum}</span>
+                  </div>
+                  <h3 style={{ margin: "0 0 8px", fontSize: 13.5, fontWeight: 700, color: "#111", lineHeight: 1.3 }}>{s.title}</h3>
+                  <div style={{ borderLeft: `3px solid ${s.accent}`, paddingLeft: 10, marginBottom: 10 }}>
+                    <p style={{ margin: 0, fontStyle: "italic", fontSize: 12.5, color: "#374151", lineHeight: 1.5 }}>"{s.quote}"</p>
+                  </div>
+                  <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 10 }}>— {s.who}</div>
+                  {expanded === s.id ? (
+                    <div>
+                      <p style={{ margin: "0 0 10px", fontSize: 12, color: "#374151", lineHeight: 1.7 }}>{s.full}</p>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: 10, color: "#9ca3af" }}>📍 {s.district} · 📅 {s.date}</span>
+                        <button onClick={() => setExpanded(null)} style={{ background: "none", border: `1px solid ${s.border}`, borderRadius: 6, padding: "3px 9px", fontSize: 10.5, fontWeight: 700, color: s.accent, cursor: "pointer" }}>Close ▲</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: 10, color: "#9ca3af" }}>📅 {s.date}</span>
+                      <button onClick={() => setExpanded(s.id)} style={{ background: s.accent, border: "none", borderRadius: 6, padding: "4px 11px", fontSize: 10.5, fontWeight: 700, color: "#fff", cursor: "pointer" }}>Read story ▼</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* MILESTONES TIMELINE */}
+          <Card style={{ marginBottom: 14 }}>
+            <SH title="Program Milestones" />
+            <div style={{ position: "relative", paddingLeft: 24 }}>
+              <div style={{ position: "absolute", left: 8, top: 0, bottom: 0, width: 2, background: "#f0d7c1", borderRadius: 2 }} />
+              {MILESTONES.map((m, i) => (
+                <div key={i} style={{ position: "relative", marginBottom: 14, display: "flex", gap: 14, alignItems: "flex-start" }}>
+                  <div style={{ position: "absolute", left: -20, top: 3, width: 12, height: 12, borderRadius: "50%", background: i === MILESTONES.length - 1 ? OR : "#fff", border: `2px solid ${OR}`, flexShrink: 0 }} />
+                  <div style={{ background: i === MILESTONES.length - 1 ? OR_PALE : "#fafaf9", border: `1px solid ${i === MILESTONES.length - 1 ? OR_PALE : "#e5e7eb"}`, borderRadius: 8, padding: "8px 12px", flex: 1 }}>
+                    <span style={{ fontSize: 10, fontWeight: 800, color: OR, marginRight: 8 }}>{m.year}</span>
+                    <span style={{ fontSize: 12, color: "#374151" }}>{m.event}</span>
+                    {i === MILESTONES.length - 1 && <span style={{ marginLeft: 8, fontSize: 9.5, fontWeight: 700, background: OR, color: "#fff", padding: "1px 6px", borderRadius: 10 }}>Current</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          {/* PRESS / RECOGNITION */}
+          <Card style={{ marginBottom: 14 }}>
+            <SH title="Recognition & Media" />
+            <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+              {PRESS.map((p, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", background: "#fafaf9", borderRadius: 9, border: "1px solid #f0d7c1" }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 8, background: OR_PALE, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>📰</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 12.5, color: "#111", marginBottom: 2 }}>{p.headline}</div>
+                    <div style={{ fontSize: 11, color: "#9ca3af" }}>{p.outlet} · {p.date}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          {/* CTA STRIP */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 10, marginBottom: 14 }}>
+            {[
+              { icon: "📘", title: "Explore the Curriculum", desc: "See HIM and GESD sessions in full." },
+              { icon: "🗺️", title: "See Our Coverage", desc: "Explore all 22 active districts on the live map." },
+              { icon: "🛡️", title: "Report a Concern", desc: "Safe, confidential case reporting for SGBV." },
+            ].map(item => (
+              <div key={item.title} style={{ background: "#fff", border: "1px solid #f0d7c1", borderRadius: 14, padding: "18px 16px", textAlign: "center" }}>
+                <div style={{ fontSize: 28, marginBottom: 8 }}>{item.icon}</div>
+                <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 5, color: "#111" }}>{item.title}</div>
+                <div style={{ fontSize: 11.5, color: "#6b7280", lineHeight: 1.5 }}>{item.desc}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* ADMIN REPORT STATS — only for logged-in users */}
+          {user && (
+            <Card style={{ marginBottom: 14 }}>
+              <SH title="Session Report Summary" action={<Btn size="sm" variant="secondary" onClick={() => showToast("Export coming soon")}>Export →</Btn>} />
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(130px,1fr))", gap: 9 }}>
+                {[["📋", "Total Reports", reports.length], ["✅", "Approved", reports.filter(r => r.status === "approved").length], ["⏳", "Pending", reports.filter(r => r.status === "pending").length], ["👦", "Boys", reports.reduce((a, r) => a + r.boys, 0)], ["👧", "Girls", reports.reduce((a, r) => a + r.girls, 0)]].map(([i, l, v]) => (
+                  <StatCard key={l} icon={i} label={l} value={v} />
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {/* SHARE STORY MODAL */}
+          {showForm && (
+            <Modal title="Share Your Story" onClose={() => { setShowForm(false); setSubmitted(false); setStoryForm({ name: "", district: "", role: "", story: "" }); }}>
+              {submitted ? (
+                <div style={{ textAlign: "center", padding: "24px 0" }}>
+                  <div style={{ fontSize: 48, marginBottom: 12 }}>🙏</div>
+                  <h3 style={{ margin: "0 0 8px", fontWeight: 700 }}>Thank You!</h3>
+                  <p style={{ color: "#6b7280", fontSize: 13, lineHeight: 1.6 }}>Your story has been received. Our team will review it and may reach out before publishing. Your privacy is fully protected.</p>
+                  <Btn style={{ marginTop: 12 }} onClick={() => { setShowForm(false); setSubmitted(false); setStoryForm({ name: "", district: "", role: "", story: "" }); }}>Close</Btn>
+                </div>
+              ) : (
+                <>
+                  <p style={{ margin: "0 0 14px", color: "#6b7280", fontSize: 12.5, lineHeight: 1.6 }}>Share how the ETT program has made a difference for you, your school, or your community. You can use a first name only or remain anonymous.</p>
+                  <FInput label="Your Name (or 'Anonymous')" placeholder="e.g. Grace or Anonymous" value={storyForm.name} onChange={e => setStoryForm(p => ({ ...p, name: e.target.value }))} />
+                  <FSelect label="District" value={storyForm.district} onChange={e => setStoryForm(p => ({ ...p, district: e.target.value }))}>
+                    <option value="">Select district (optional)</option>
+                    {DISTRICT_LIST.map(d => <option key={d}>{d}</option>)}
+                  </FSelect>
+                  <FSelect label="I am a..." value={storyForm.role} onChange={e => setStoryForm(p => ({ ...p, role: e.target.value }))}>
+                    <option value="">Prefer not to say</option>
+                    <option>Student</option>
+                    <option>Teacher / TOT</option>
+                    <option>Parent / Guardian</option>
+                    <option>Community member</option>
+                    <option>School head</option>
+                  </FSelect>
+                  <FArea label="Your Story *" placeholder="Tell us what changed for you, your school, or your community." value={storyForm.story} onChange={e => setStoryForm(p => ({ ...p, story: e.target.value }))} />
+                  <div style={{ background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 8, padding: "9px 12px", fontSize: 11.5, color: "#15803d", marginBottom: 12 }}>
+                    🔒 Your submission is private and secure. We will never publish your story without your permission.
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Btn onClick={submitStory}>Submit Story</Btn>
+                    <Btn variant="secondary" onClick={() => setShowForm(false)}>Cancel</Btn>
+                  </div>
+                </>
+              )}
+            </Modal>
+          )}
+
+        </div>
+      );
+    }
+    // ─────────────────────────────────────────────
+    // ABOUT PAGE
+    // ─────────────────────────────────────────────
+    function AboutPage() {
+      return (
+        <div>
+          <div style={{ background: "#fff", border: `1px solid ${OR_PALE}`, borderRadius: 12, padding: "28px 26px", color: "#111827", marginBottom: 14, boxShadow: "0 8px 24px rgba(234,108,10,.08)" }}>
+            <h2 style={{ margin: "0 0 5px", fontSize: 20, fontWeight: 700 }}>Fighting SGBV Through Education</h2>
+            <p style={{ margin: 0, color: "#6b7280", fontSize: 13, lineHeight: 1.6, maxWidth: 460 }}>Ujamaa Pamodzi Africa works across Malawi to end SGBV through community-led education, teacher empowerment, and collaborative school networks.</p>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 9 }}>
+            {[["📍", "Our Mission", "Eliminate SGBV in Malawi by empowering teachers and students with knowledge and community support."], ["🌍", "Our Reach", "19 active districts, 127 clusters, 7,620+ students across all three regions."], ["👩‍🏫", "Our Approach", "Peer-led ETT training empowering teachers to become agents of change."], ["⚖️", "Legal Framework", "Aligned with Malawi's Gender Equality Act and Child Care, Protection and Justice Act."], ["🤝", "Partnerships", "Ministry of Education, district offices, teacher training colleges and community leaders."], ["📞", "Contact Us", "Lilongwe, Malawi · info@ujamaa.mw\nChild Helpline: 116 · VSU: 997"]].map(([i, t, d]) => (
+              <Card key={t}>
+                <div style={{ fontSize: 20, marginBottom: 7 }}>{i}</div>
+                <h4 style={{ margin: "0 0 4px", fontSize: 12.5, fontWeight: 700 }}>{t}</h4>
+                <p style={{ margin: 0, fontSize: 11.5, color: "#6b7280", lineHeight: 1.6, whiteSpace: "pre-line" }}>{d}</p>
+              </Card>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // ─────────────────────────────────────────────
+    // ROOT APP
+    // ─────────────────────────────────────────────
+    function App() {
+      const [user, setUser] = useState(null);
+      const [page, setPage] = useState("dashboard");
+      const [reports, setReports] = useState(REPORTS_INIT);
+      const [toast, setToast] = useState(null);
+      const [sidebarOpen, setSidebarOpen] = useState(false);
+      const [mapFocus, setMapFocus] = useState(null);
+
+      const showToast = useCallback(msg => {
+        setToast(msg); setTimeout(() => setToast(null), 3800);
+      }, []);
+
+      const addReport = r => setReports(p => [{ id: Date.now(), ...r }, ...p]);
+      const updateStatus = (id, status) => setReports(p => p.map(r => r.id === id ? { ...r, status } : r));
+      const openMapTarget = target => { setMapFocus(target); setPage("maps"); };
+      // Auto-close sidebar when leaving dashboard
+      useEffect(() => {
+        if (page !== "dashboard") setSidebarOpen(false);
+      }, [page]);
+      const renderPage = () => {
+        const publicPages = ["dashboard", "submit", "maps", "trainings", "about", "login", "impact", "curriculum"];
+        if (page === "login")
+          return (
+            <LoginPage
+              onLogin={u => {
+                setUser(u);
+                setPage("dashboard");
+              }}
+              onRegister={u => {
+                setUser(u);
+                setPage("dashboard");
+              }}
+              onPublicView={() => {
+                setUser(null);
+                setPage("dashboard");
+              }}
+            />
+          );
+
+        if (!user && !publicPages.includes(page))
+          return (
+            <LoginPage
+              onLogin={u => {
+                setUser(u);
+                setPage("dashboard");
+              }}
+              onRegister={u => {
+                setUser(u);
+                setPage("dashboard");
+              }}
+              onPublicView={() => {
+                setUser(null);
+                setPage("dashboard");
+              }}
+            />
+          );
+        if (page === "login")
+          return (
+            <LoginPage
+              onLogin={u => {
+                setUser(u);
+                setPage("dashboard");
+              }}
+              onRegister={u => {
+                setUser(u);
+                setPage("dashboard");
+              }}
+              onPublicView={() => {
+                setUser(null);
+                setPage("dashboard");
+              }}
+            />
+          );
+
+        if (!user && !publicPages.includes(page))
+          return (
+            <LoginPage
+              onLogin={u => {
+                setUser(u);
+                setPage("dashboard");
+              }}
+              onRegister={u => {
+                setUser(u);
+                setPage("dashboard");
+              }}
+              onPublicView={() => {
+                setUser(null);
+                setPage("dashboard");
+              }}
+            />
+          ); if (
+          !user &&
+          (
+            page === "users" ||
+            page === "reports" ||
+            page === "analytics" ||
+            page === "my_reports"
+          )
+        ) {
+          return (
+            <Card style={{ maxWidth: 500 }}>
+              <h2>🔒 Restricted Page</h2>
+
+              <p style={{ color: "#6b7280" }}>
+                This page is only available to authorized ETT staff members.
+              </p>
+
+              <Btn onClick={() => setPage("login")}>
+                Staff Login
+              </Btn>
+            </Card>
+          );
+        }
+        switch (page) {
+          case "dashboard": return <Dashboard user={user} reports={reports} setPage={setPage} />;
+          case "submit": return <SubmitReport user={user} onSubmit={addReport} showToast={showToast} />;
+          case "reports":
+          case "my_reports": return <ReportsPage user={user} reports={reports} onUpdateStatus={updateStatus} showToast={showToast} />;
+          case "maps": return (<MapsPage setPage={setPage} user={user} focus={mapFocus} />);
+          case "clusters": return <ClustersPage user={user} setPage={setPage} onOpenMap={openMapTarget} />;
+          case "districts": return <DistrictsPage user={user} onOpenMap={openMapTarget} />;
+          case "trainings": return <TrainingsPage />;
+          case "curriculum": return <CurriculumPage />;
+          case "ett": return <ETTPage />;
+          case "analytics": return <AnalyticsPage reports={reports} />;
+          case "users": return <UsersPage user={user} showToast={showToast} />;
+          case "impact": return <ImpactPage reports={reports} showToast={showToast} user={user} />;
+          case "about": return <AboutPage />;
+          default: return <Dashboard user={user} reports={reports} setPage={setPage} />;
+        }
+      };
+
+      return (
+        <>
+          <GlobalStyles />
+          <div
+            style={{
+              minHeight: "100vh",
+              background: "#f5f7fb",
+              display: "flex"
+            }}
+          >
+
+            <Sidebar
+              page={page}
+              setPage={setPage}
+              user={user}
+              onLogout={() => {
+                setUser(null);
+                setPage("dashboard");
+              }}
+              open={sidebarOpen}
+              onClose={() => setSidebarOpen(false)}
+            />
+
+            <div
+              style={{
+                flex: 1,
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden"
+              }}
+            >
+
+              {/* TOPBAR */}
+              <div
+                data-topbar
+                style={{
+                  background: "rgba(255,255,255,.96)",
+                  borderBottom: "1px solid #f3e4d7",
+                  padding: "0 18px",
+                  height: 52,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  flexShrink: 0,
+                  zIndex: 100,
+                  boxShadow: "0 2px 12px rgba(59,38,33,.06)"
+                }}
+              >
+                {/* LEFT: hamburger / back + brand */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+
+                  {/* On dashboard: show hamburger. On other pages: show back button */}
+                  {page === "dashboard" ? (
+                    <button
+                      onClick={() => setSidebarOpen(!sidebarOpen)}
+                      style={{
+                        border: "none",
+                        background: sidebarOpen ? OR_PALE : "transparent",
+                        cursor: "pointer",
+                        padding: "7px 8px",
+                        borderRadius: 8,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        transition: "all .13s",
+                        flexShrink: 0
+                      }}
+                    >
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={sidebarOpen ? OR_D : "#374151"} strokeWidth="2.2">
+                        {sidebarOpen ? (
+                          <><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>
+                        ) : (
+                          <><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></>
+                        )}
+                      </svg>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setPage("dashboard")}
+                      style={{
+                        border: "1px solid #e5e7eb",
+                        background: "#fff",
+                        cursor: "pointer",
+                        padding: "6px 12px",
+                        borderRadius: 8,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 5,
+                        fontSize: 13,
+                        fontWeight: 700,
+                        color: "#374151",
+                        transition: "all .13s",
+                        flexShrink: 0
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.background = OR_PALE; e.currentTarget.style.borderColor = OR; e.currentTarget.style.color = OR_D; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.borderColor = "#e5e7eb"; e.currentTarget.style.color = "#374151"; }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <polyline points="15 18 9 12 15 6" />
+                      </svg>
+                      Back
+                    </button>
+                  )}
+
+                  {/* Brand + page label */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                    <AfricaLogo size={26} />
+                    <div style={{ fontSize: 14, color: "#9ca3af", fontWeight: 600 }}>
+                      ETT Malawi
+                      {page !== "dashboard" && (
+                        <>
+                          <span style={{ margin: "0 6px", opacity: .35 }}>›</span>
+                          <b style={{ color: "#111", fontSize: 14 }}>{PAGE_LABELS[page] || page}</b>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* RIGHT: Sign In or user pill */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {user ? (
+                    <div
+                      style={{
+                        background: OR_PALE,
+                        color: OR_D,
+                        padding: "4px 11px",
+                        borderRadius: 20,
+                        fontSize: 11.5,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6
+                      }}
+                      onClick={() => setPage("dashboard")}
+                    >
+                      {ROLE_CFG[user.role].icon} {user.name}
+                    </div>
+                  ) : (
+                    <Btn size="sm" onClick={() => setPage("login")}>Sign In</Btn>
+                  )}
+                </div>
+
+              </div>
+              {/* END TOPBAR */}
+
+              {/* CONTENT */}
+              <div
+                data-content
+                style={{
+                  flex: 1,
+                  overflowY: "auto",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  padding: "24px 20px"
+                }}
+              >
+
+                {/* PAGE CONTENT */}
+                <div style={{ width: "100%", maxWidth: 1400, flex: 1 }}>
+                  {renderPage()}
+                </div>
+
+                {/* FOOTER */}
+                <div
+                  style={{
+                    width: "100%",
+                    maxWidth: 1400,
+                    marginTop: 40,
+                    paddingTop: 20,
+                    paddingBottom: 20,
+                    borderTop: "1px solid #f0d7c1",
+                    textAlign: "center",
+                    flexShrink: 0
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 6 }}>
+                    <AfricaLogo size={20} variant="orange" />
+                    <span style={{ fontSize: 12.5, fontWeight: 800, color: BLACK }}>ETT Malawi</span>
+                  </div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 3 }}>
+                    Empowering the Boys and Girls to fight SGBV
+                  </div>
+                  <div style={{ fontSize: 11.5, color: "#6b7280", marginBottom: 4 }}>
+                    Child Protection and Empowerment Program
+                  </div>
+                  <div style={{ fontSize: 10.5, color: "#9ca3af", marginBottom: 10 }}>
+                    © 2026 Ujamaa Pamodzi Africa. All rights reserved.
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "center", gap: 14, flexWrap: "wrap" }}>
+                    {[["🆘", "Child Helpline", "116"], ["👮", "VSU Police", "997"], ["📧", "Email", "info@ujamaa.mw"]].map(([icon, label, val]) => (
+                      <span key={label} style={{ fontSize: 10.5, color: "#9ca3af", display: "flex", alignItems: "center", gap: 4 }}>
+                        {icon} <b style={{ color: "#6b7280" }}>{label}:</b> {val}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                {/* END FOOTER */}
+
+              </div>
+              {/* END CONTENT */}
+
+            </div>
+
+          </div>
+
+          {toast && (
+            <Toast
+              msg={toast}
+              onClose={() => setToast(null)}
+            />
+          )}
+
+        </>
+      );
+    }
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
